@@ -13,6 +13,7 @@
       <span id="markerStatus">Find marker</span>
       <span id="gameStatus">Connecting</span>
     </div>
+
     <div id="finder" class="finder" aria-hidden="true">
       <i></i>
       <i></i>
@@ -20,14 +21,16 @@
       <i></i>
     </div>
 
+    <div id="focusReticle" class="focus-reticle" hidden></div>
+
     <div id="controls" class="controls" hidden>
       <div class="control-row">
-        <button id="rotateLeft" title="Rotate left">‹</button>
-        <strong id="azimuthValue">0°</strong>
-        <button id="rotateRight" title="Rotate right">›</button>
+        <button id="rotateLeft" title="Rotate left">&lsaquo;</button>
+        <strong id="azimuthValue">0 deg</strong>
+        <button id="rotateRight" title="Rotate right">&rsaquo;</button>
       </div>
       <label>
-        <span>Elevation <strong id="elevationValue">45°</strong></span>
+        <span>Elevation <strong id="elevationValue">45 deg</strong></span>
         <input id="elevationInput" type="range" min="5" max="85" value="45" />
       </label>
       <label>

@@ -25,6 +25,7 @@ const controls = document.querySelector('#controls');
 const waitingOverlay = document.querySelector('#waitingOverlay');
 const gameOver = document.querySelector('#gameOver');
 const finder = document.querySelector('#finder');
+const focusReticle = document.querySelector('#focusReticle');
 const rotateLeft = document.querySelector('#rotateLeft');
 const rotateRight = document.querySelector('#rotateRight');
 const azimuthValue = document.querySelector('#azimuthValue');
@@ -40,6 +41,7 @@ let myAzimuth = 0;
 let currentTurn = null;
 let animating = false;
 let arLayerFixes = 0;
+let focusReticleTimer = null;
 
 AFRAME.registerComponent('face-camera', {
   tick() {
@@ -86,6 +88,67 @@ function forceCameraLayerVisible() {
 }
 forceCameraLayerVisible();
 
+function getCameraTrack() {
+  const video = document.querySelector('video');
+  const stream = video?.srcObject;
+  return stream?.getVideoTracks?.()[0] || null;
+}
+
+function showFocusReticle(x, y, supported) {
+  focusReticle.style.left = `${x}px`;
+  focusReticle.style.top = `${y}px`;
+  focusReticle.style.borderColor = supported ? '#89e163' : '#f7d36e';
+  focusReticle.hidden = false;
+  window.clearTimeout(focusReticleTimer);
+  focusReticleTimer = window.setTimeout(() => {
+    focusReticle.hidden = true;
+  }, 760);
+}
+
+async function focusCameraAt(clientX, clientY) {
+  const track = getCameraTrack();
+  let supported = false;
+
+  if (track?.applyConstraints) {
+    const x = Math.min(1, Math.max(0, clientX / window.innerWidth));
+    const y = Math.min(1, Math.max(0, clientY / window.innerHeight));
+    const caps = track.getCapabilities?.() || {};
+    const modes = caps.focusMode || [];
+    const focusMode = modes.includes('single-shot')
+      ? 'single-shot'
+      : modes.includes('continuous')
+        ? 'continuous'
+        : modes.includes('manual')
+          ? 'manual'
+          : null;
+    const attempts = [];
+
+    if (focusMode) {
+      attempts.push({ advanced: [{ focusMode, pointsOfInterest: [{ x, y }] }] });
+      attempts.push({ advanced: [{ focusMode }] });
+    }
+    attempts.push({ advanced: [{ pointsOfInterest: [{ x, y }] }] });
+
+    for (const constraints of attempts) {
+      try {
+        await track.applyConstraints(constraints);
+        supported = true;
+        break;
+      } catch {
+        supported = false;
+      }
+    }
+  }
+
+  showFocusReticle(clientX, clientY, supported);
+  markerStatus.textContent = supported ? 'Focus set' : 'Tap focus visual';
+}
+
+document.addEventListener('pointerdown', (event) => {
+  if (event.target.closest('.controls, .top-hud, .game-over, button, input')) return;
+  focusCameraAt(event.clientX, event.clientY);
+});
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
@@ -116,7 +179,7 @@ function updateControls() {
 
 function setAzimuth(value, broadcast = true) {
   myAzimuth = ((Number(value) % 360) + 360) % 360;
-  azimuthValue.textContent = `${Math.round(myAzimuth)}°`;
+  azimuthValue.textContent = `${Math.round(myAzimuth)} deg`;
   rotateTank(playerId, myAzimuth);
 
   if (broadcast) {
@@ -344,7 +407,7 @@ socket.on('tank-rotated', ({ playerId: rotatedPlayerId, azimuth }) => {
   rotateTank(rotatedPlayerId, azimuth);
   if (rotatedPlayerId === playerId) {
     myAzimuth = azimuth;
-    azimuthValue.textContent = `${Math.round(myAzimuth)}°`;
+    azimuthValue.textContent = `${Math.round(myAzimuth)} deg`;
   }
 });
 
@@ -384,7 +447,7 @@ rotateLeft.addEventListener('click', () => setAzimuth(myAzimuth - 5));
 rotateRight.addEventListener('click', () => setAzimuth(myAzimuth + 5));
 
 elevationInput.addEventListener('input', () => {
-  elevationValue.textContent = `${elevationInput.value}°`;
+  elevationValue.textContent = `${elevationInput.value} deg`;
 });
 
 powerInput.addEventListener('input', () => {

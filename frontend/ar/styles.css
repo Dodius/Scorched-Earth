@@ -93,6 +93,58 @@ input {
   border-width: 0 0 3px 3px;
 }
 
+.focus-reticle {
+  position: fixed;
+  z-index: 35;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border: 2px solid #f7d36e;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 18px rgba(247, 211, 110, 0.65);
+  animation: focus-pulse 520ms ease-out;
+}
+
+.focus-reticle::before,
+.focus-reticle::after {
+  content: "";
+  position: absolute;
+  background: #f7d36e;
+}
+
+.focus-reticle::before {
+  left: 50%;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.focus-reticle::after {
+  top: 50%;
+  left: 9px;
+  right: 9px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+@keyframes focus-pulse {
+  from {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .top-hud span {
   padding: 8px 10px;
   border-radius: 999px;

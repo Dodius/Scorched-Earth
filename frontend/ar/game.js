@@ -247,6 +247,7 @@ function initScene(nextGame) {
   game.players.forEach((player, index) => {
     if (player.alive !== false) addTank(player, index, game.config);
   });
+  setHud(`${game.status} · ${tanks.size} tank${tanks.size === 1 ? '' : 's'}`);
 
   const me = game.players.find((player) => player.id === playerId);
   if (me) setAzimuth(me.azimuth || 0, false);

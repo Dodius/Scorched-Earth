@@ -157,7 +157,7 @@ export function rejoinGame(gameId, playerId) {
 export function startGame(gameId) {
   const game = games.get(gameId);
   if (!game) throw new Error('Game not found');
-  if (game.players.length < 2) throw new Error('At least 2 players required');
+  if (game.players.length < 1) throw new Error('At least 1 player required');
 
   game.status = 'playing';
   game.startedAt = game.startedAt || new Date().toISOString();
@@ -206,7 +206,10 @@ export function eliminatePlayer(game, playerId) {
 
 export function getNextTurn(game) {
   const living = game.players.filter((player) => player.alive !== false);
-  if (living.length <= 1) return null;
+  if (living.length === 1) {
+    game.currentTurn = living[0].id;
+    return living[0].id;
+  }
   const currentIndex = game.players.findIndex((player) => player.id === game.currentTurn);
 
   for (let offset = 1; offset <= game.players.length; offset += 1) {

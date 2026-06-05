@@ -98,7 +98,7 @@ function renderPlayers(players = []) {
       `
     )
     .join('');
-  els.lobbyHint.textContent = players.length >= 2 ? 'Ready when the host starts.' : 'Waiting for at least two players.';
+  els.lobbyHint.textContent = players.length >= 1 ? 'Ready when the host starts.' : 'Waiting for a player.';
 }
 
 function enterLobby(game, playerData) {

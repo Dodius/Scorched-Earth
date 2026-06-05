@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Scorched Earth AR</title>
     <link rel="stylesheet" href="/ar/styles.css" />
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/",
+        "threex": "https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/three.js/build/ar-threex.mjs"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="topHud" class="top-hud">
@@ -16,10 +23,7 @@
     </div>
 
     <div id="finder" class="finder" aria-hidden="true">
-      <i></i>
-      <i></i>
-      <i></i>
-      <i></i>
+      <i></i><i></i><i></i><i></i>
     </div>
 
     <div id="focusReticle" class="focus-reticle" hidden></div>
@@ -43,40 +47,6 @@
 
     <div id="waitingOverlay" class="waiting">Waiting for game state</div>
     <div id="gameOver" class="game-over" hidden></div>
-
-    <a-scene
-      vr-mode-ui="enabled: false"
-      renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true"
-      arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono; maxDetectionRate: 30;"
-    >
-      <a-marker
-        id="mainMarker"
-        type="pattern"
-        url="/ar/markers/pattern-ARFly_binary_clean_05.patt"
-      >
-        <a-entity id="markerProbe">
-          <a-cylinder
-            radius="0.045"
-            height="0.025"
-            position="0 0.02 0"
-            color="#ffdc4f"
-            material="shader: flat"
-          ></a-cylinder>
-          <a-cone
-            radius-bottom="0.055"
-            radius-top="0"
-            height="0.16"
-            position="0 0.12 0"
-            color="#ff4f36"
-            material="shader: flat"
-          ></a-cone>
-        </a-entity>
-        <a-entity id="battlefield" position="0 0 0" scale="1 1 1"></a-entity>
-      </a-marker>
-      <a-entity light="type: ambient; color: #ffffff; intensity: 1.2"></a-entity>
-      <a-entity light="type: directional; color: #ffffff; intensity: 0.8" position="0 1 1"></a-entity>
-      <a-entity camera></a-entity>
-    </a-scene>
 
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <script src="/config.js"></script>

@@ -1,0 +1,13 @@
+{
+  "name": "scorched-earth-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/write-config.js",
+    "start": "npx serve . -l 4000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
+}

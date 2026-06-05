@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scorched Earth AR</title>
+    <link rel="stylesheet" href="/venue/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="table-panel">
+        <div>
+          <p class="eyebrow" id="tableLabel">Venue table</p>
+          <h1>Scorched Earth AR</h1>
+        </div>
+        <div class="status-pill" id="connectionStatus">Connecting</div>
+      </section>
+
+      <section class="grid">
+        <article class="panel games-panel">
+          <div class="panel-head">
+            <h2>Table Games</h2>
+            <button class="icon-button" id="refreshGames" title="Refresh games">↻</button>
+          </div>
+          <div id="gamesList" class="games-list"></div>
+        </article>
+
+        <article class="panel create-panel">
+          <div class="panel-head">
+            <h2>Host Init</h2>
+          </div>
+          <form id="createForm" class="form">
+            <label>
+              <span>Field size</span>
+              <select name="fieldSize">
+                <option value="medium" selected>Medium · 0.8m x 0.6m</option>
+                <option value="small">Small · 0.6m x 0.45m</option>
+                <option value="large">Large · 1.0m x 0.75m</option>
+              </select>
+            </label>
+            <label>
+              <span>Scene</span>
+              <select name="scenePreset">
+                <option value="classic-grid" selected>Classic Grid</option>
+                <option value="pub-table">Pub Table</option>
+                <option value="crater-field">Crater Field</option>
+              </select>
+            </label>
+            <label>
+              <span>Players</span>
+              <input name="maxPlayers" type="number" min="2" max="6" value="6" />
+            </label>
+            <label>
+              <span>Bomb</span>
+              <select name="bombMode">
+                <option value="normal" selected>Normal Bomb</option>
+                <option value="leap-frog">Leap-Frog Bomb</option>
+              </select>
+            </label>
+            <button class="primary" type="submit">Create Game</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="panel join-panel" id="joinPanel" hidden>
+        <div class="panel-head">
+          <h2>Join Game</h2>
+          <span class="game-code" id="selectedGameCode"></span>
+        </div>
+        <form id="joinForm" class="join-form">
+          <img id="avatarPreview" alt="" class="avatar-preview" />
+          <label>
+            <span>Nickname</span>
+            <input id="usernameInput" name="username" maxlength="24" autocomplete="nickname" placeholder="Tank pilot" required />
+          </label>
+          <button class="primary" type="submit">Join Lobby</button>
+        </form>
+      </section>
+
+      <section class="panel lobby-panel" id="lobbyPanel" hidden>
+        <div class="panel-head">
+          <h2>Lobby</h2>
+          <span class="game-code" id="lobbyGameCode"></span>
+        </div>
+        <div id="playersList" class="players-list"></div>
+        <div class="lobby-actions">
+          <button class="primary" id="startGameButton">Start Game</button>
+          <p id="lobbyHint">Waiting for at least two players.</p>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="/config.js"></script>
+    <script type="module" src="/venue/join.js"></script>
+  </body>
+</html>

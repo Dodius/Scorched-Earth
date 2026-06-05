@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scorched Earth Admin</title>
+    <link rel="stylesheet" href="/venue/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="table-panel">
+        <div>
+          <p class="eyebrow">Host panel</p>
+          <h1>Admin</h1>
+        </div>
+        <div class="status-pill" id="status">Connecting</div>
+      </section>
+      <section class="panel join-panel">
+        <form class="join-form" id="adminForm">
+          <label>
+            <span>Game ID</span>
+            <input id="gameIdInput" placeholder="abc123" required />
+          </label>
+          <button class="primary" type="submit">Load</button>
+          <button class="secondary" id="startButton" type="button">Start</button>
+        </form>
+        <pre id="gameOutput" style="white-space: pre-wrap; color: var(--muted);"></pre>
+      </section>
+    </main>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="/config.js"></script>
+    <script type="module" src="/admin/admin.js"></script>
+  </body>
+</html>

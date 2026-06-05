@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: scorched-earth-api
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: CORS_ORIGIN
+        sync: false
+      - key: MONGO_URI
+        sync: false

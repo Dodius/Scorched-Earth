@@ -1,0 +1,263 @@
+:root {
+  --bg: #15120d;
+  --panel: #242017;
+  --panel-2: #30291d;
+  --line: #5d513e;
+  --text: #f6eddc;
+  --muted: #c7bda9;
+  --accent: #89e163;
+  --danger: #f06a4b;
+  --gold: #f5bf52;
+  --shadow: 0 18px 55px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    linear-gradient(135deg, rgba(137, 225, 99, 0.08), transparent 34%),
+    radial-gradient(circle at 80% 10%, rgba(245, 191, 82, 0.16), transparent 28%),
+    var(--bg);
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.shell {
+  width: min(1080px, calc(100vw - 28px));
+  margin: 0 auto;
+  padding: 18px 0 36px;
+}
+
+.table-panel,
+.panel {
+  border: 1px solid rgba(246, 237, 220, 0.16);
+  background: linear-gradient(180deg, rgba(48, 41, 29, 0.96), rgba(36, 32, 23, 0.96));
+  box-shadow: var(--shadow);
+}
+
+.table-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 120px;
+  padding: 24px;
+  border-radius: 8px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.2rem, 7vw, 5rem);
+  line-height: 0.9;
+  letter-spacing: 0;
+}
+
+h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--gold);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-pill,
+.game-code {
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.panel {
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.icon-button,
+.primary,
+.secondary {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #17130d;
+  font-weight: 800;
+}
+
+.icon-button {
+  width: 42px;
+  background: var(--gold);
+}
+
+.primary {
+  width: 100%;
+  padding: 0 16px;
+  background: var(--accent);
+}
+
+.secondary {
+  padding: 0 14px;
+  color: var(--text);
+  background: #4b4030;
+}
+
+.form,
+.join-form {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--text);
+  background: #17130d;
+}
+
+.games-list,
+.players-list {
+  display: grid;
+  gap: 10px;
+}
+
+.game-row,
+.player-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(246, 237, 220, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.game-row strong,
+.player-row strong {
+  display: block;
+}
+
+.game-row small,
+.player-row small {
+  color: var(--muted);
+}
+
+.join-panel,
+.lobby-panel {
+  margin-top: 14px;
+}
+
+.join-form {
+  grid-template-columns: 80px 1fr 160px;
+  align-items: end;
+}
+
+.avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.player-row {
+  grid-template-columns: 48px 1fr auto;
+}
+
+.player-row img {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  background: #111;
+}
+
+.lobby-actions {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.lobby-actions p {
+  color: var(--muted);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #1b130c;
+  background: var(--danger);
+  font-weight: 800;
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 760px) {
+  .table-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .grid,
+  .join-form,
+  .lobby-actions {
+    grid-template-columns: 1fr;
+  }
+}

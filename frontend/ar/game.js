@@ -36,12 +36,35 @@ const powerInput = document.querySelector('#powerInput');
 const powerValue = document.querySelector('#powerValue');
 const fireButton = document.querySelector('#fireButton');
 
+const turnTimer = document.querySelector('#turnTimer');
+
 const tanks = new Map();
 let game = null;
 let myAzimuth = 0;
 let currentTurn = null;
 let animating = false;
 let focusReticleTimer = null;
+let countdownInterval = null;
+
+function startCountdown() {
+  clearInterval(countdownInterval);
+  let secs = 30;
+  turnTimer.textContent = `${secs}s`;
+  turnTimer.hidden = false;
+  turnTimer.classList.remove('low');
+  countdownInterval = setInterval(() => {
+    secs -= 1;
+    turnTimer.textContent = `${secs}s`;
+    if (secs <= 10) turnTimer.classList.add('low');
+    if (secs <= 0) clearInterval(countdownInterval);
+  }, 1000);
+}
+
+function stopCountdown() {
+  clearInterval(countdownInterval);
+  countdownInterval = null;
+  turnTimer.hidden = true;
+}
 
 AFRAME.registerComponent('face-camera', {
   tick() {
@@ -64,6 +87,10 @@ function setMarkerText() {
   requestAnimationFrame(setMarkerText);
 }
 setMarkerText();
+
+document.querySelector('a-scene').addEventListener('renderstart', () => {
+  document.querySelector('a-scene').renderer.setClearColor(0x000000, 0);
+}, { once: true });
 
 
 function getCameraTrack() {
@@ -381,12 +408,14 @@ socket.on('game-started', ({ game: nextGame, currentTurn: nextTurn }) => {
   initScene(nextGame);
   currentTurn = nextTurn;
   setHud('Playing');
+  startCountdown();
   updateControls();
 });
 
 socket.on('your-turn', ({ playerId: nextTurn }) => {
   currentTurn = nextTurn;
   if (game) game.currentTurn = nextTurn;
+  startCountdown();
   updateControls();
 });
 
@@ -399,6 +428,7 @@ socket.on('tank-rotated', ({ playerId: rotatedPlayerId, azimuth }) => {
 });
 
 socket.on('projectile-launched', (payload) => {
+  stopCountdown();
   animateProjectile(payload);
 });
 
@@ -414,6 +444,7 @@ socket.on('player-eliminated', ({ playerId: eliminatedId }) => {
 });
 
 socket.on('game-over', ({ winnerId, game: finalGame }) => {
+  stopCountdown();
   game = finalGame || game;
   controls.hidden = true;
   waitingOverlay.hidden = true;

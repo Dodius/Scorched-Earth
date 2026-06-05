@@ -122,10 +122,6 @@ function launchShot(game, player, { azimuth, elevation, power }) {
   const result = detectHit(waypoints, game.players, player.id);
   const launchAt = Date.now() + 300;
 
-  if (result.hit) {
-    eliminatePlayer(game, result.targetId);
-  }
-
   gameNamespace.to(game.id).emit('projectile-launched', {
     waypoints,
     hit: result.hit,
@@ -138,11 +134,12 @@ function launchShot(game, player, { azimuth, elevation, power }) {
     const currentGame = getMutableGame(game.id);
     if (!currentGame || currentGame.status !== 'playing') return;
 
-    const winner = result.hit ? endIfWinner(currentGame) : null;
-
     if (result.hit) {
+      eliminatePlayer(currentGame, result.targetId);
       gameNamespace.to(currentGame.id).emit('player-eliminated', { playerId: result.targetId });
     }
+
+    const winner = result.hit ? endIfWinner(currentGame) : null;
 
     if (winner) {
       clearTurnTimer(currentGame.id);

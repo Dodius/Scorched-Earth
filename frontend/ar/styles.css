@@ -158,6 +158,17 @@ input {
   font-weight: 800;
 }
 
+#turnTimer {
+  min-width: 2.6em;
+  text-align: center;
+  transition: color 0.3s, background 0.3s;
+}
+
+#turnTimer.low {
+  color: #ff4f36;
+  background: rgba(255, 79, 54, 0.15);
+}
+
 .waiting {
   position: fixed;
   z-index: 20;

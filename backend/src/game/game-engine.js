@@ -33,7 +33,7 @@ export function computeTrajectory(origin, azimuth, elevation, power, options = {
   const elevationRad = Number(elevation) * DEG_TO_RAD;
   const horizontalSpeed = Math.cos(elevationRad) * speed;
   const verticalSpeed = Math.sin(elevationRad) * speed;
-  const dirX = Math.sin(azimuthRad);
+  const dirX = -Math.sin(azimuthRad);
   const dirZ = -Math.cos(azimuthRad);
   const points = [];
 

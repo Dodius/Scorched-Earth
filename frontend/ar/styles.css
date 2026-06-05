@@ -9,6 +9,10 @@ body {
   font-family: "Trebuchet MS", Verdana, sans-serif;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 video {
   filter: none !important;
 }

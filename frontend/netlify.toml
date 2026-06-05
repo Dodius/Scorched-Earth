@@ -3,6 +3,11 @@
   command = "npm run build"
 
 [[redirects]]
+  from = "/"
+  to = "/venue/demo/table/1"
+  status = 302
+
+[[redirects]]
   from = "/venue/*"
   to = "/venue/index.html"
   status = 200

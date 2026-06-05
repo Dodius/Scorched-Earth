@@ -8,7 +8,9 @@ import { connectMongo } from './db/connect.js';
 import { computeLeapFrogTrajectory, computeTrajectory, detectHit } from './game/game-engine.js';
 import {
   createGame,
+  clearTableGames,
   eliminatePlayer,
+  endGame,
   endIfWinner,
   getGame,
   getGames,
@@ -65,15 +67,22 @@ app.get('/', (req, res) => {
 
 const gameNamespace = io.of('/game');
 
+function tableRoom(venueId, tableNo) {
+  return `table:${venueId}:${tableNo}`;
+}
+
 gameNamespace.on('connection', (socket) => {
   socket.on('request-games', ({ venueId, tableNo } = {}) => {
-    socket.emit('games-list', { games: getGames(String(venueId || 'demo'), String(tableNo || '1')) });
+    const cleanVenueId = String(venueId || 'demo');
+    const cleanTableNo = String(tableNo || '1');
+    socket.join(tableRoom(cleanVenueId, cleanTableNo));
+    socket.emit('games-list', { games: getGames(cleanVenueId, cleanTableNo) });
   });
 
   socket.on('create-game', ({ venueId, tableNo, config } = {}, ack) => {
     try {
       const game = createGame(String(venueId || 'demo'), String(tableNo || '1'), config || {});
-      gameNamespace.emit('games-list', { games: getGames(game.venueId, game.tableNo) });
+      gameNamespace.to(tableRoom(game.venueId, game.tableNo)).emit('games-list', { games: getGames(game.venueId, game.tableNo) });
       ack?.({ ok: true, game });
     } catch (error) {
       ack?.({ ok: false, error: error.message });
@@ -136,6 +145,25 @@ gameNamespace.on('connection', (socket) => {
     } catch (error) {
       ack?.({ ok: false, error: error.message });
     }
+  });
+
+  socket.on('end-game', ({ gameId } = {}, ack) => {
+    try {
+      const game = endGame(String(gameId));
+      gameNamespace.to(game.id).emit('game-state', { game });
+      gameNamespace.to(tableRoom(game.venueId, game.tableNo)).emit('games-list', { games: getGames(game.venueId, game.tableNo) });
+      ack?.({ ok: true, game });
+    } catch (error) {
+      ack?.({ ok: false, error: error.message });
+    }
+  });
+
+  socket.on('clear-table-games', ({ venueId, tableNo } = {}, ack) => {
+    const cleanVenueId = String(venueId || 'demo');
+    const cleanTableNo = String(tableNo || '1');
+    const removed = clearTableGames(cleanVenueId, cleanTableNo);
+    gameNamespace.to(tableRoom(cleanVenueId, cleanTableNo)).emit('games-list', { games: [] });
+    ack?.({ ok: true, removed });
   });
 
   socket.on('rotate-tank', ({ gameId, playerId, azimuth } = {}) => {

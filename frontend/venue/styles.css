@@ -115,7 +115,8 @@ h2 {
 
 .icon-button,
 .primary,
-.secondary {
+.secondary,
+.danger {
   min-height: 42px;
   border: 0;
   border-radius: 6px;
@@ -139,6 +140,23 @@ h2 {
   padding: 0 14px;
   color: var(--text);
   background: #4b4030;
+}
+
+.danger {
+  padding: 0 12px;
+  color: #1a0f0b;
+  background: var(--danger);
+}
+
+.danger-icon {
+  background: var(--danger);
+}
+
+.panel-tools,
+.game-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .form,

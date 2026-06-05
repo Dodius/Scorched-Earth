@@ -1,4 +1,4 @@
-const API_BASE = window.SE_API_URL || '';
+const API_BASE = window.API_URL || window.VITE_API_URL || window.SE_API_URL || '';
 const socket = io(`${API_BASE}/game`);
 const status = document.querySelector('#status');
 const form = document.querySelector('#adminForm');

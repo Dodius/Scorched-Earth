@@ -1,5 +1,5 @@
 import express from 'express';
-import { getGame, resetGame, startGame } from '../game/room-manager.js';
+import { endGame, getGame, resetGame, startGame } from '../game/room-manager.js';
 
 export const gamesRouter = express.Router();
 
@@ -21,6 +21,15 @@ gamesRouter.post('/games/:gameId/start', (req, res) => {
 gamesRouter.post('/games/:gameId/reset', (req, res) => {
   try {
     const game = resetGame(req.params.gameId);
+    return res.json({ game });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+gamesRouter.delete('/games/:gameId', (req, res) => {
+  try {
+    const game = endGame(req.params.gameId);
     return res.json({ game });
   } catch (error) {
     return res.status(400).json({ error: error.message });

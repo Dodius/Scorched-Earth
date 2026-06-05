@@ -85,6 +85,30 @@ export function getGames(venueId, tableNo) {
     .map(publicGame);
 }
 
+export function endGame(gameId) {
+  const game = games.get(gameId);
+  if (!game) throw new Error('Game not found');
+
+  game.status = 'ended';
+  game.endedAt = new Date().toISOString();
+  game.currentTurn = null;
+
+  return publicGame(game);
+}
+
+export function clearTableGames(venueId, tableNo) {
+  const removed = [];
+
+  for (const [gameId, game] of games.entries()) {
+    if (game.venueId === venueId && game.tableNo === tableNo) {
+      removed.push(gameId);
+      games.delete(gameId);
+    }
+  }
+
+  return removed;
+}
+
 export function joinGame(gameId, player) {
   const game = games.get(gameId);
   if (!game) throw new Error('Game not found');

@@ -14,7 +14,7 @@ const params = new URLSearchParams(window.location.search);
 const gameId = params.get('gameId');
 const playerId = params.get('playerId');
 const storedPlayer = JSON.parse(localStorage.getItem('se-player') || '{}');
-const API_BASE = window.SE_API_URL || '';
+const API_BASE = window.API_URL || window.VITE_API_URL || window.SE_API_URL || '';
 const socket = io(`${API_BASE}/game`);
 
 const battlefield = document.querySelector('#battlefield');
@@ -24,6 +24,7 @@ const gameStatus = document.querySelector('#gameStatus');
 const controls = document.querySelector('#controls');
 const waitingOverlay = document.querySelector('#waitingOverlay');
 const gameOver = document.querySelector('#gameOver');
+const finder = document.querySelector('#finder');
 const rotateLeft = document.querySelector('#rotateLeft');
 const rotateRight = document.querySelector('#rotateRight');
 const azimuthValue = document.querySelector('#azimuthValue');
@@ -38,6 +39,7 @@ let game = null;
 let myAzimuth = 0;
 let currentTurn = null;
 let animating = false;
+let arLayerFixes = 0;
 
 AFRAME.registerComponent('face-camera', {
   tick() {
@@ -53,9 +55,36 @@ function setHud(message) {
 
 function setMarkerText() {
   markerStatus.textContent = marker.object3D.visible ? 'Marker locked' : 'Find marker';
+  finder.hidden = marker.object3D.visible;
   requestAnimationFrame(setMarkerText);
 }
 setMarkerText();
+
+function forceCameraLayerVisible() {
+  document.querySelectorAll('video').forEach((video) => {
+    video.style.position = 'fixed';
+    video.style.inset = '0';
+    video.style.width = '100vw';
+    video.style.height = '100vh';
+    video.style.objectFit = 'cover';
+    video.style.zIndex = '0';
+    video.style.filter = 'none';
+    video.style.opacity = '1';
+  });
+
+  document.querySelectorAll('canvas').forEach((canvas) => {
+    canvas.style.position = 'fixed';
+    canvas.style.inset = '0';
+    canvas.style.zIndex = '1';
+    canvas.style.background = 'transparent';
+  });
+
+  arLayerFixes += 1;
+  if (arLayerFixes < 80) {
+    window.setTimeout(forceCameraLayerVisible, 250);
+  }
+}
+forceCameraLayerVisible();
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({

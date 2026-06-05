@@ -13,6 +13,12 @@
       <span id="markerStatus">Find marker</span>
       <span id="gameStatus">Connecting</span>
     </div>
+    <div id="finder" class="finder" aria-hidden="true">
+      <i></i>
+      <i></i>
+      <i></i>
+      <i></i>
+    </div>
 
     <div id="controls" class="controls" hidden>
       <div class="control-row">
@@ -38,7 +44,7 @@
       embedded
       vr-mode-ui="enabled: false"
       renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true"
-      arjs="sourceType: webcam; debugUIEnabled: false;"
+      arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono; maxDetectionRate: 30;"
     >
       <a-marker
         id="mainMarker"

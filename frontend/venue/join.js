@@ -1,4 +1,4 @@
-const API_BASE = window.SE_API_URL || '';
+const API_BASE = window.API_URL || window.VITE_API_URL || window.SE_API_URL || '';
 const socket = io(`${API_BASE}/game`);
 const pathParts = window.location.pathname.split('/').filter(Boolean);
 const venueId = pathParts[1] || new URLSearchParams(window.location.search).get('venueId') || 'demo';
@@ -13,6 +13,7 @@ const els = {
   connectionStatus: document.querySelector('#connectionStatus'),
   gamesList: document.querySelector('#gamesList'),
   refreshGames: document.querySelector('#refreshGames'),
+  clearGames: document.querySelector('#clearGames'),
   createForm: document.querySelector('#createForm'),
   joinPanel: document.querySelector('#joinPanel'),
   joinForm: document.querySelector('#joinForm'),
@@ -65,7 +66,10 @@ function renderGames(games) {
             <strong>${game.id}</strong>
             <small>${game.playerCount}/${game.maxPlayers} players · ${game.status} · ${game.config.scenePreset}</small>
           </div>
-          <button class="secondary" data-join="${game.id}">Join</button>
+          <div class="game-actions">
+            <button class="secondary" data-join="${game.id}">Join</button>
+            <button class="danger" data-end="${game.id}">End</button>
+          </div>
         </div>
       `
     )
@@ -156,9 +160,27 @@ socket.on('error-message', ({ error }) => toast(error));
 
 els.refreshGames.addEventListener('click', requestGames);
 
+els.clearGames.addEventListener('click', () => {
+  socket.emit('clear-table-games', { venueId, tableNo }, (reply) => {
+    if (!reply?.ok) toast(reply?.error || 'Could not clear games');
+    requestGames();
+  });
+});
+
 els.gamesList.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-join]');
-  if (button) selectGame(button.dataset.join);
+  const joinButton = event.target.closest('[data-join]');
+  const endButton = event.target.closest('[data-end]');
+
+  if (joinButton) {
+    selectGame(joinButton.dataset.join);
+  }
+
+  if (endButton) {
+    socket.emit('end-game', { gameId: endButton.dataset.end }, (reply) => {
+      if (!reply?.ok) toast(reply?.error || 'Could not end game');
+      requestGames();
+    });
+  }
 });
 
 els.createForm.addEventListener('submit', async (event) => {

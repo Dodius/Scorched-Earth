@@ -69,10 +69,10 @@ If Netlify asks for publish directory relative to the base directory, use:
 Environment variables:
 
 ```text
-SE_API_URL=https://YOUR-RENDER-SERVICE.onrender.com
+API_URL=https://YOUR-RENDER-SERVICE.onrender.com
 ```
 
-The build writes `config.js`, and the browser uses that URL for REST and Socket.IO.
+The build writes `config.js`, and the browser uses that URL for REST and Socket.IO. `VITE_API_URL` and `SE_API_URL` are also accepted as aliases.
 
 Test URL:
 

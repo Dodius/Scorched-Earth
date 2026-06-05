@@ -62,6 +62,32 @@ function setMarkerText() {
 }
 setMarkerText();
 
+function makeRendererTransparent() {
+  const scene = document.querySelector('a-scene');
+  if (!scene?.renderer) return;
+  scene.renderer.setClearColor(0x000000, 0);
+}
+
+document.querySelector('a-scene')?.addEventListener('loaded', makeRendererTransparent);
+window.setTimeout(makeRendererTransparent, 1000);
+
+function updateCameraHealth() {
+  const video = document.querySelector('video');
+  const stream = video?.srcObject;
+  const track = stream?.getVideoTracks?.()[0];
+
+  if (!video) {
+    setHud('no camera video');
+  } else if (!track) {
+    setHud('no camera track');
+  } else if (video.readyState < 2) {
+    setHud(`camera loading ${video.readyState}`);
+  }
+
+  window.setTimeout(updateCameraHealth, 1500);
+}
+window.setTimeout(updateCameraHealth, 1500);
+
 function getCameraTrack() {
   const video = document.querySelector('video');
   const stream = video?.srcObject;

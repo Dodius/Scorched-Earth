@@ -17,6 +17,10 @@ video {
   filter: none !important;
 }
 
+canvas {
+  background: transparent !important;
+}
+
 .a-enter-vr,
 .a-enter-ar {
   display: none !important;

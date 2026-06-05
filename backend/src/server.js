@@ -66,9 +66,95 @@ app.get('/', (req, res) => {
 });
 
 const gameNamespace = io.of('/game');
+const turnTimers = new Map();
+const TURN_TIMEOUT_MS = 30000;
 
 function tableRoom(venueId, tableNo) {
   return `table:${venueId}:${tableNo}`;
+}
+
+function clearTurnTimer(gameId) {
+  const timer = turnTimers.get(gameId);
+  if (timer) {
+    clearTimeout(timer);
+    turnTimers.delete(gameId);
+  }
+}
+
+function scheduleTurnTimeout(gameId) {
+  clearTurnTimer(gameId);
+
+  const game = getMutableGame(gameId);
+  if (!game || game.status !== 'playing' || !game.currentTurn) return;
+
+  const expectedPlayerId = game.currentTurn;
+  const timer = setTimeout(() => {
+    const currentGame = getMutableGame(gameId);
+    if (!currentGame || currentGame.status !== 'playing' || currentGame.currentTurn !== expectedPlayerId) return;
+
+    const player = currentGame.players.find((item) => item.id === expectedPlayerId);
+    if (!player || player.alive === false) {
+      const nextTurn = getNextTurn(currentGame);
+      gameNamespace.to(currentGame.id).emit('your-turn', { playerId: nextTurn });
+      gameNamespace.to(currentGame.id).emit('game-state', { game: getGame(currentGame.id) });
+      scheduleTurnTimeout(currentGame.id);
+      return;
+    }
+
+    gameNamespace.to(currentGame.id).emit('turn-timeout', { playerId: expectedPlayerId });
+    launchShot(currentGame, player, {
+      azimuth: player.azimuth || 0,
+      elevation: 85,
+      power: 20
+    });
+  }, TURN_TIMEOUT_MS);
+
+  turnTimers.set(gameId, timer);
+}
+
+function launchShot(game, player, { azimuth, elevation, power }) {
+  clearTurnTimer(game.id);
+
+  player.azimuth = Number(azimuth);
+  const origin = { ...player.position, y: 0.07 };
+  const trajectoryFn = game.config.bombMode === 'leap-frog' ? computeLeapFrogTrajectory : computeTrajectory;
+  const waypoints = trajectoryFn(origin, Number(azimuth), Number(elevation), Number(power));
+  const result = detectHit(waypoints, game.players, player.id);
+  const launchAt = Date.now() + 300;
+
+  if (result.hit) {
+    eliminatePlayer(game, result.targetId);
+  }
+
+  gameNamespace.to(game.id).emit('projectile-launched', {
+    waypoints,
+    hit: result.hit,
+    targetId: result.targetId,
+    impactPoint: result.impactPoint,
+    launchAt
+  });
+
+  setTimeout(() => {
+    const currentGame = getMutableGame(game.id);
+    if (!currentGame || currentGame.status !== 'playing') return;
+
+    const winner = result.hit ? endIfWinner(currentGame) : null;
+
+    if (result.hit) {
+      gameNamespace.to(currentGame.id).emit('player-eliminated', { playerId: result.targetId });
+    }
+
+    if (winner) {
+      clearTurnTimer(currentGame.id);
+      gameNamespace.to(currentGame.id).emit('game-over', { winnerId: winner.id, game: getGame(currentGame.id) });
+      return;
+    }
+
+    const nextTurn = getNextTurn(currentGame);
+    gameNamespace.to(currentGame.id).emit('your-turn', { playerId: nextTurn });
+    gameNamespace.to(currentGame.id).emit('game-state', { game: getGame(currentGame.id) });
+    scheduleTurnTimeout(currentGame.id);
+  }, Math.max(1600, waypoints.length * 45 + 650));
 }
 
 gameNamespace.on('connection', (socket) => {
@@ -130,6 +216,7 @@ gameNamespace.on('connection', (socket) => {
         game
       });
       gameNamespace.to(game.id).emit('your-turn', { playerId: game.currentTurn });
+      scheduleTurnTimeout(game.id);
       ack?.({ ok: true, game });
     } catch (error) {
       socket.emit('error-message', { error: error.message });
@@ -140,6 +227,7 @@ gameNamespace.on('connection', (socket) => {
   socket.on('reset-game', ({ gameId } = {}, ack) => {
     try {
       const game = resetGame(String(gameId));
+      clearTurnTimer(game.id);
       gameNamespace.to(game.id).emit('game-state', { game });
       ack?.({ ok: true, game });
     } catch (error) {
@@ -150,6 +238,7 @@ gameNamespace.on('connection', (socket) => {
   socket.on('end-game', ({ gameId } = {}, ack) => {
     try {
       const game = endGame(String(gameId));
+      clearTurnTimer(game.id);
       gameNamespace.to(game.id).emit('game-state', { game });
       gameNamespace.to(tableRoom(game.venueId, game.tableNo)).emit('games-list', { games: getGames(game.venueId, game.tableNo) });
       ack?.({ ok: true, game });
@@ -162,6 +251,7 @@ gameNamespace.on('connection', (socket) => {
     const cleanVenueId = String(venueId || 'demo');
     const cleanTableNo = String(tableNo || '1');
     const removed = clearTableGames(cleanVenueId, cleanTableNo);
+    removed.forEach(clearTurnTimer);
     gameNamespace.to(tableRoom(cleanVenueId, cleanTableNo)).emit('games-list', { games: [] });
     ack?.({ ok: true, removed });
   });
@@ -184,41 +274,7 @@ gameNamespace.on('connection', (socket) => {
       const player = game.players.find((item) => item.id === String(playerId));
       if (!player || player.alive === false) throw new Error('Player cannot fire');
 
-      player.azimuth = Number(azimuth);
-      const origin = { ...player.position, y: 0.07 };
-      const trajectoryFn = game.config.bombMode === 'leap-frog' ? computeLeapFrogTrajectory : computeTrajectory;
-      const waypoints = trajectoryFn(origin, Number(azimuth), Number(elevation), Number(power));
-      const result = detectHit(waypoints, game.players, String(playerId));
-      const launchAt = Date.now() + 300;
-
-      if (result.hit) {
-        eliminatePlayer(game, result.targetId);
-      }
-
-      gameNamespace.to(game.id).emit('projectile-launched', {
-        waypoints,
-        hit: result.hit,
-        targetId: result.targetId,
-        impactPoint: result.impactPoint,
-        launchAt
-      });
-
-      setTimeout(() => {
-        const winner = result.hit ? endIfWinner(game) : null;
-
-        if (result.hit) {
-          gameNamespace.to(game.id).emit('player-eliminated', { playerId: result.targetId });
-        }
-
-        if (winner) {
-          gameNamespace.to(game.id).emit('game-over', { winnerId: winner.id, game: getGame(game.id) });
-          return;
-        }
-
-        const nextTurn = getNextTurn(game);
-        gameNamespace.to(game.id).emit('your-turn', { playerId: nextTurn });
-        gameNamespace.to(game.id).emit('game-state', { game: getGame(game.id) });
-      }, Math.max(1600, waypoints.length * 45 + 650));
+      launchShot(game, player, { azimuth, elevation, power });
 
       ack?.({ ok: true });
     } catch (error) {

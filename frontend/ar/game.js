@@ -399,6 +399,12 @@ socket.on('projectile-launched', (payload) => {
   animateProjectile(payload);
 });
 
+socket.on('turn-timeout', ({ playerId: timedOutPlayerId }) => {
+  const player = game?.players.find((item) => item.id === timedOutPlayerId);
+  waitingOverlay.hidden = false;
+  waitingOverlay.textContent = `${player?.username || 'Player'} timed out`;
+});
+
 socket.on('player-eliminated', ({ playerId: eliminatedId }) => {
   const player = game?.players.find((item) => item.id === eliminatedId);
   if (player) player.alive = false;

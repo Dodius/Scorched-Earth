@@ -41,7 +41,6 @@ let game = null;
 let myAzimuth = 0;
 let currentTurn = null;
 let animating = false;
-let arLayerFixes = 0;
 let focusReticleTimer = null;
 
 AFRAME.registerComponent('face-camera', {
@@ -62,32 +61,6 @@ function setMarkerText() {
   requestAnimationFrame(setMarkerText);
 }
 setMarkerText();
-
-function forceCameraLayerVisible() {
-  document.querySelectorAll('video').forEach((video) => {
-    video.style.position = 'fixed';
-    video.style.inset = '0';
-    video.style.width = '100vw';
-    video.style.height = '100vh';
-    video.style.objectFit = 'cover';
-    video.style.zIndex = '0';
-    video.style.filter = 'none';
-    video.style.opacity = '1';
-  });
-
-  document.querySelectorAll('canvas').forEach((canvas) => {
-    canvas.style.position = 'fixed';
-    canvas.style.inset = '0';
-    canvas.style.zIndex = '1';
-    canvas.style.background = 'transparent';
-  });
-
-  arLayerFixes += 1;
-  if (arLayerFixes < 80) {
-    window.setTimeout(forceCameraLayerVisible, 250);
-  }
-}
-forceCameraLayerVisible();
 
 function getCameraTrack() {
   const video = document.querySelector('video');

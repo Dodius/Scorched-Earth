@@ -18,6 +18,7 @@ const API_BASE = window.API_URL || window.VITE_API_URL || window.SE_API_URL || '
 const socket = io(`${API_BASE}/game`);
 
 const battlefield = document.querySelector('#battlefield');
+const markerProbe = document.querySelector('#markerProbe');
 const marker = document.querySelector('#mainMarker');
 const markerStatus = document.querySelector('#markerStatus');
 const gameStatus = document.querySelector('#gameStatus');
@@ -217,7 +218,7 @@ function addField(config) {
     height: '0.75',
     rotation: '-90 0 0',
     color: colors.plane,
-    material: `shader: standard; roughness: 0.8; metalness: 0.05; opacity: 0.92`
+    material: 'shader: flat; side: double; opacity: 0.95'
   });
   battlefield.appendChild(plane);
 
@@ -228,7 +229,8 @@ function addField(config) {
       height: '0.004',
       depth: '0.75',
       position: `${x} 0.006 0`,
-      color: colors.wire
+      color: colors.wire,
+      material: 'shader: flat'
     }));
   }
 
@@ -239,7 +241,8 @@ function addField(config) {
       height: '0.004',
       depth: '0.004',
       position: `0 0.007 ${z}`,
-      color: colors.wire
+      color: colors.wire,
+      material: 'shader: flat'
     }));
   }
 
@@ -271,14 +274,16 @@ function addTank(player, index, config) {
     height: '0.045',
     depth: '0.065',
     color: tankColor(index, colors.tankBase),
-    position: '0 0.02 0'
+    position: '0 0.02 0',
+    material: 'shader: flat'
   });
 
   const turret = createEntity('a-cylinder', {
     radius: '0.026',
     height: '0.024',
     color: '#20231e',
-    position: '0 0.055 0'
+    position: '0 0.055 0',
+    material: 'shader: flat'
   });
 
   const barrel = createEntity('a-cylinder', {
@@ -286,7 +291,8 @@ function addTank(player, index, config) {
     height: '0.105',
     color: '#e8ddc6',
     position: '0 0.058 -0.065',
-    rotation: '90 0 0'
+    rotation: '90 0 0',
+    material: 'shader: flat'
   });
 
   const avatar = createEntity('a-image', {
@@ -310,6 +316,11 @@ function initScene(nextGame) {
   game.players.forEach((player, index) => {
     if (player.alive !== false) addTank(player, index, game.config);
   });
+  if (markerProbe && tanks.size > 0) {
+    window.setTimeout(() => {
+      markerProbe.setAttribute('visible', 'false');
+    }, 1800);
+  }
   setHud(`${game.status} · ${tanks.size} tank${tanks.size === 1 ? '' : 's'}`);
 
   const me = game.players.find((player) => player.id === playerId);

@@ -120,7 +120,7 @@ function launchShot(game, player, { azimuth, elevation, power }) {
   const trajectoryFn = game.config.bombMode === 'leap-frog' ? computeLeapFrogTrajectory : computeTrajectory;
   const waypoints = trajectoryFn(origin, Number(azimuth), Number(elevation), Number(power));
   const result = detectHit(waypoints, game.players, player.id);
-  const launchAt = Date.now() + 300;
+  const launchAt = Date.now(); // no intentional delay — clients start animation on receive
 
   gameNamespace.to(game.id).emit('projectile-launched', {
     waypoints,

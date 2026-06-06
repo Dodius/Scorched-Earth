@@ -3,7 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 
 // ── constants ────────────────────────────────────────────────────────────────
-const FIELD_SCALES      = { small: 0.75, medium: 1, large: 1.25 };
+// Physical AR scale relative to the marker: 1=fits inside card, 2=twice marker, 4=four times
+const FIELD_SCALES      = { small: 1, medium: 2, large: 4 };
 const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x80cbc4];
 const TRAIL_LENGTH      = 10;
 const PARTICLE_COUNT    = 60;
@@ -11,9 +12,6 @@ const TURN_TIMEOUT_SECS = 30;
 // Game-world dimensions for medium field (logical unit = FIELD_M_W metres)
 const FIELD_M_W = 400;
 const FIELD_M_D = 300;
-// How many times bigger than the AR marker the battlefield appears.
-// 1 = field fits inside marker card; 6 = field extends ~6x beyond it.
-const BATTLEFIELD_SCALE = 6;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const markerStatus   = document.getElementById('markerStatus');
@@ -415,8 +413,8 @@ function rotateTank(id, azimuth) {
 async function initScene(nextGame) {
   game        = nextGame;
   currentTurn = game.currentTurn;
-  fieldScale  = FIELD_SCALES[game.config?.fieldSize] || 1;
-  battlefieldGroup.scale.setScalar(BATTLEFIELD_SCALE);
+  fieldScale  = FIELD_SCALES[game.config?.fieldSize] ?? 2;
+  battlefieldGroup.scale.setScalar(fieldScale);
 
   const seed = hashSeed(game.id);
   buildTerrain(seed);

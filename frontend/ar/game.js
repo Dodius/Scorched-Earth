@@ -41,7 +41,6 @@ let myAzimuth   = 0;
 let currentTurn = null;
 let animating   = false;
 let fieldScale  = 1;
-let pendingGame = null;      // game state queued before AR context was ready
 let countdownInterval = null;
 let focusReticleTimer = null;
 
@@ -61,16 +60,38 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(0, 1, 1);
 scene.add(dirLight);
 
-// ── AR.js ─────────────────────────────────────────────────────────────────────
-let arSource, arContext, markerRoot;
-let battlefieldGroup = null;   // null until initArContext runs
-let arReady = false;
+// ── AR.js: context + marker controls — set up synchronously at module load ───
+// Pattern: create context and markers immediately; only gate arContext.update()
+// on arSource.ready. Do NOT wait for 'canplay' — that event can fire before
+// the listener is added and the whole scene init would be skipped.
 
-arSource = new ArToolkitSource({ sourceType: 'webcam' });
-arSource.init(() => {
-  // Ensure the camera video element is in the DOM and visible.
-  // AR.js Three.js mode may not append it, or may mark it display:none.
-  const video = arSource.domElement;
+const arContext = new ArToolkitContext({
+  cameraParametersUrl: '/ar/markers/camera_para.dat',
+  detectionMode: 'mono',
+  maxDetectionRate: 30,
+});
+arContext.init(() => {
+  camera.projectionMatrix.copy(arContext.getProjectionMatrix());
+});
+
+const markerRoot = new THREE.Group();
+scene.add(markerRoot);
+
+new ArMarkerControls(arContext, markerRoot, {
+  type: 'pattern',
+  patternUrl: '/ar/markers/pattern-ARFly_binary_clean_05.patt',
+  smooth: true, smoothCount: 5, smoothTolerance: 0.01, smoothThreshold: 2,
+});
+
+const battlefieldGroup = new THREE.Group();
+markerRoot.add(battlefieldGroup);
+
+// ── Webcam source — async, only needed to feed arContext.update() ─────────────
+let arSource = null;
+
+const arSource$ = new ArToolkitSource({ sourceType: 'webcam' });
+arSource$.init(() => {
+  const video = arSource$.domElement;
   if (video && !document.body.contains(video)) {
     document.body.insertBefore(video, document.body.firstChild);
   }
@@ -81,46 +102,15 @@ arSource.init(() => {
       objectFit: 'cover', zIndex: '0', display: 'block',
     });
   }
-
-  arSource.domElement.addEventListener('canplay', initArContext, { once: true });
+  arSource = arSource$;   // expose once ready
   setTimeout(handleResize, 2000);
 });
 
-function initArContext() {
-  arContext = new ArToolkitContext({
-    cameraParametersUrl: '/ar/markers/camera_para.dat',
-    detectionMode: 'mono',
-    maxDetectionRate: 30,
-  });
-  arContext.init(() => {
-    camera.projectionMatrix.copy(arContext.getProjectionMatrix());
-    arReady = true;
-  });
-
-  markerRoot = new THREE.Group();
-  scene.add(markerRoot);
-  new ArMarkerControls(arContext, markerRoot, {
-    type: 'pattern',
-    patternUrl: '/ar/markers/pattern-ARFly_binary_clean_05.patt',
-    smooth: true, smoothCount: 5, smoothTolerance: 0.01, smoothThreshold: 2,
-  });
-
-  // Battlefield anchors to the marker — set it up before applying pending game.
-  battlefieldGroup = new THREE.Group();
-  markerRoot.add(battlefieldGroup);
-  buildTerrain();
-
-  if (pendingGame) {
-    initScene(pendingGame);
-    pendingGame = null;
-  }
-}
-
 function handleResize() {
-  if (arSource?.onResizeElement) {
-    arSource.onResizeElement();
-    arSource.copyElementSizeTo(renderer.domElement);
-    if (arContext?.arController) arContext.arController.orientation = arSource.getVideoOrientation();
+  if (arSource$?.onResizeElement) {
+    arSource$.onResizeElement();
+    arSource$.copyElementSizeTo(renderer.domElement);
+    if (arContext?.arController) arContext.arController.orientation = arSource$.getVideoOrientation();
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
@@ -128,11 +118,9 @@ window.addEventListener('resize', handleResize);
 
 // ── marker visibility polling ─────────────────────────────────────────────────
 function pollMarkerVisible() {
-  if (markerRoot) {
-    const visible = markerRoot.visible;
-    markerStatus.textContent = visible ? 'Marker locked' : 'Find marker';
-    finder.hidden = visible;
-  }
+  const visible = markerRoot.visible;
+  markerStatus.textContent = visible ? 'Marker locked' : 'Find marker';
+  finder.hidden = visible;
   requestAnimationFrame(pollMarkerVisible);
 }
 pollMarkerVisible();
@@ -164,7 +152,6 @@ function getTerrainY(lx, lz) {
 }
 
 function buildTerrain(seed = 12345) {
-  if (!battlefieldGroup) return;
   if (terrainMesh) {
     battlefieldGroup.remove(terrainMesh);
     terrainMesh.geometry.dispose();
@@ -189,6 +176,8 @@ function buildTerrain(seed = 12345) {
   battlefieldGroup.add(border);
 }
 
+buildTerrain(); // initial terrain; rebuilt with game seed in initScene()
+
 // ── tank building ─────────────────────────────────────────────────────────────
 const textureLoader = new THREE.TextureLoader();
 const avatarCache   = new Map();
@@ -204,9 +193,11 @@ function buildTankMesh(colorHex) {
   const group = new THREE.Group();
   const hullMat  = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6, metalness: 0.3 });
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.9 });
+
   const hull = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.036, 0.065), hullMat);
   hull.position.y = 0.018;
   group.add(hull);
+
   const trackL = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.018, 0.068), trackMat);
   trackL.position.set(-0.048, 0.009, 0);
   group.add(trackL);
@@ -235,10 +226,8 @@ function buildTankMesh(colorHex) {
 }
 
 async function addTank(player, index) {
-  if (!battlefieldGroup) return;
   const { group, turretGroup } = buildTankMesh(TANK_COLORS[index % TANK_COLORS.length]);
-
-  // Positions are in logical units; battlefieldGroup.scale handles field size.
+  // positions are in logical units — battlefieldGroup.scale handles field size
   group.position.set(player.position.x, getTerrainY(player.position.x, player.position.z) + 0.003, player.position.z);
   turretGroup.rotation.y = THREE.MathUtils.degToRad(player.azimuth || 0);
 
@@ -259,7 +248,7 @@ async function addTank(player, index) {
 function removeTank(id) {
   const t = tanks.get(id);
   if (!t) return;
-  if (battlefieldGroup) battlefieldGroup.remove(t.group);
+  battlefieldGroup.remove(t.group);
   tanks.delete(id);
 }
 
@@ -274,10 +263,6 @@ function rotateTank(id, azimuth) {
 
 // ── scene init ────────────────────────────────────────────────────────────────
 async function initScene(nextGame) {
-  if (!battlefieldGroup) {
-    pendingGame = nextGame;
-    return;
-  }
   game        = nextGame;
   currentTurn = game.currentTurn;
   fieldScale  = FIELD_SCALES[game.config?.fieldSize] || 1;
@@ -345,7 +330,6 @@ function setAzimuth(value, broadcast = true) {
 const activeParticleSystems = [];
 
 function spawnExplosion(point, hit) {
-  if (!battlefieldGroup) return;
   const positions  = new Float32Array(PARTICLE_COUNT * 3);
   const velocities = new Float32Array(PARTICLE_COUNT * 3);
   for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -361,9 +345,7 @@ function spawnExplosion(point, hit) {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({
-    color: hit ? 0xff6545 : 0xf5bf52, size: 0.012, transparent: true, opacity: 1, sizeAttenuation: true,
-  });
+  const mat = new THREE.PointsMaterial({ color: hit ? 0xff6545 : 0xf5bf52, size: 0.012, transparent: true, opacity: 1, sizeAttenuation: true });
   const pts = new THREE.Points(geo, mat);
   battlefieldGroup.add(pts);
 
@@ -384,7 +366,8 @@ function tickParticles() {
     const t = (now - sys.startTime) / sys.duration;
     if (t >= 1) {
       sys.done = true;
-      if (battlefieldGroup) { battlefieldGroup.remove(sys.pts); battlefieldGroup.remove(sys.ring); }
+      battlefieldGroup.remove(sys.pts);
+      battlefieldGroup.remove(sys.ring);
       sys.geo.dispose(); sys.mat.dispose();
       sys.ring.geometry.dispose(); sys.ringMat.dispose();
       continue;
@@ -409,9 +392,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   animating = true;
   updateControls();
   await new Promise((r) => setTimeout(r, Math.max(0, launchAt - Date.now())));
-  if (!battlefieldGroup) { animating = false; updateControls(); return; }
 
-  // Waypoints are in logical units — same coordinate space as tanks.
   const pts = waypoints.map((wp) => new THREE.Vector3(wp.x, wp.y, wp.z));
 
   const projGeo = new THREE.SphereGeometry(0.016, 8, 8);
@@ -435,7 +416,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     if (trailHistory.length > TRAIL_LENGTH) trailHistory.pop();
     trailMeshes.forEach((m, i) => {
       if (trailHistory[i]) { m.position.copy(trailHistory[i]); m.visible = true; }
-      else { m.visible = false; }
+      else m.visible = false;
     });
     await new Promise((r) => setTimeout(r, 45));
   }
@@ -465,7 +446,7 @@ function showFocusReticle(x, y, ok) {
 }
 
 async function focusCameraAt(clientX, clientY) {
-  const track = arSource?.domElement?.srcObject?.getVideoTracks?.()[0] || null;
+  const track = arSource$?.domElement?.srcObject?.getVideoTracks?.()[0] || null;
   let ok = false;
   if (track?.applyConstraints) {
     const x = clientX / window.innerWidth;
@@ -492,17 +473,7 @@ document.addEventListener('pointerdown', (e) => {
 // ── render loop ───────────────────────────────────────────────────────────────
 function render() {
   requestAnimationFrame(render);
-  // arSource.ready is AR.js's own flag (true once video is streaming).
-  // Don't gate on arReady — camera_para.dat may load slowly and the callback
-  // fires later, but marker detection can start as soon as the source is ready.
-  if (arSource?.ready && arContext) {
-    arContext.update(arSource.domElement);
-    // Copy projection matrix once after arContext.init() callback fires.
-    if (arReady) {
-      camera.projectionMatrix.copy(arContext.getProjectionMatrix());
-      arReady = false;   // one-shot
-    }
-  }
+  if (arSource$?.ready && arContext) arContext.update(arSource$.domElement);
   tickParticles();
   renderer.render(scene, camera);
 }

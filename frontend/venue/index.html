@@ -33,14 +33,29 @@
             <h2>Host Init</h2>
           </div>
           <form id="createForm" class="form">
-            <label>
+            <div class="form-field">
               <span>Field size</span>
-              <select name="fieldSize">
-                <option value="medium" selected>Medium · 0.8m x 0.6m</option>
-                <option value="small">Small · 0.6m x 0.45m</option>
-                <option value="large">Large · 1.0m x 0.75m</option>
-              </select>
-            </label>
+              <div class="field-size-picker">
+                <label class="field-tile">
+                  <input type="radio" name="fieldSize" value="small" />
+                  <span class="field-tile__preview field-tile__preview--small"></span>
+                  <span class="field-tile__name">Small</span>
+                  <span class="field-tile__dim">0.6 × 0.45 m</span>
+                </label>
+                <label class="field-tile">
+                  <input type="radio" name="fieldSize" value="medium" checked />
+                  <span class="field-tile__preview field-tile__preview--medium"></span>
+                  <span class="field-tile__name">Medium</span>
+                  <span class="field-tile__dim">0.8 × 0.6 m</span>
+                </label>
+                <label class="field-tile field-tile--large">
+                  <input type="radio" name="fieldSize" value="large" />
+                  <span class="field-tile__preview field-tile__preview--large"></span>
+                  <span class="field-tile__name">Large</span>
+                  <span class="field-tile__dim">1.0 × 0.75 m</span>
+                </label>
+              </div>
+            </div>
             <label>
               <span>Scene</span>
               <select name="scenePreset">

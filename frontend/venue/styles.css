@@ -188,6 +188,79 @@ select {
   background: #17130d;
 }
 
+/* same grid/gap/colour as label, but can legally contain label children */
+.form-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+/* ── field-size visual picker ── */
+.field-size-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.field-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 8px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.field-tile input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Field preview rectangle — maintains 4:3 ratio, sizes give 4× area for large */
+.field-tile__preview {
+  display: block;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.5;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 6px, currentColor 6px, currentColor 7px),
+    repeating-linear-gradient(90deg, transparent, transparent 6px, currentColor 6px, currentColor 7px);
+  background-size: 8px 8px;
+}
+
+.field-tile__preview--small  { width: 40px; height: 30px; }   /* area = 1 200 */
+.field-tile__preview--medium { width: 57px; height: 43px; }   /* area ≈ 2 451 (2×) */
+.field-tile__preview--large  { width: 80px; height: 60px; }   /* area = 4 800 (4×) */
+
+.field-tile__dim {
+  font-size: 0.62rem;
+  opacity: 0.7;
+}
+
+/* selected state */
+.field-tile:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(137, 225, 99, 0.1);
+  color: var(--text);
+}
+
+.field-tile:has(input:checked) .field-tile__preview {
+  opacity: 1;
+}
+
 .games-list,
 .players-list {
   display: grid;

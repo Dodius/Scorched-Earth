@@ -11,6 +11,9 @@ const TURN_TIMEOUT_SECS = 30;
 // Game-world dimensions for medium field (logical unit = FIELD_M_W metres)
 const FIELD_M_W = 400;
 const FIELD_M_D = 300;
+// How many times bigger than the AR marker the battlefield appears.
+// 1 = field fits inside marker card; 6 = field extends ~6x beyond it.
+const BATTLEFIELD_SCALE = 6;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const markerStatus   = document.getElementById('markerStatus');
@@ -250,8 +253,8 @@ function placeTree(gltfScene, lx, lz, targetH, label) {
 function populateScenery() {
   while (sceneryGroup.children.length) sceneryGroup.remove(sceneryGroup.children[0]);
 
-  const PINE_H  = 0.22;
-  const BIRCH_H = 0.17;
+  const PINE_H  = 0.11;
+  const BIRCH_H = 0.085;
 
   // 4 pines at ±100 m corners
   for (const [mx, mz] of [[100,100],[-100,100],[100,-100],[-100,-100]]) {
@@ -363,18 +366,15 @@ function buildTankGeometric(colorHex) {
 
 async function addTank(player, index) {
   const colorHex = TANK_COLORS[index % TANK_COLORS.length];
-  let group, turretGroup;
 
-  if (tankGltfScene) {
-    const result = buildTankGltf(colorHex);
-    group = result.group;
-    // Whole tank group rotates for azimuth
-    turretGroup = group;
-  } else {
-    const result = buildTankGeometric(colorHex);
-    group       = result.group;
-    turretGroup = result.turretGroup;
-  }
+  // Use reliable geometric tank (GLTF placement still unreliable with Sketchfab hierarchy)
+  const { group, turretGroup } = buildTankGeometric(colorHex);
+
+  // Bright floating disc so the tank position is unmissable regardless of camera angle
+  const discMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.004, 16), discMat);
+  disc.position.y = 0.09;
+  group.add(disc);
 
   const ty = getTerrainY(player.position.x, player.position.z);
   group.position.set(player.position.x, ty, player.position.z);
@@ -384,8 +384,8 @@ async function addTank(player, index) {
     const tex = await loadAvatar(player.avatarUrl);
     if (tex) {
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-      sprite.scale.set(0.1, 0.1, 1);
-      sprite.position.set(0, 0.22, 0);
+      sprite.scale.set(0.08, 0.08, 1);
+      sprite.position.set(0, 0.16, 0);
       group.add(sprite);
     }
   }
@@ -416,7 +416,7 @@ async function initScene(nextGame) {
   game        = nextGame;
   currentTurn = game.currentTurn;
   fieldScale  = FIELD_SCALES[game.config?.fieldSize] || 1;
-  battlefieldGroup.scale.setScalar(fieldScale);
+  battlefieldGroup.scale.setScalar(BATTLEFIELD_SCALE);
 
   const seed = hashSeed(game.id);
   buildTerrain(seed);

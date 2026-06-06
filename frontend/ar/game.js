@@ -66,6 +66,19 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
 dirLight.position.set(1, 2, 1);
 scene.add(dirLight);
 
+// ── Hide AR.js processing canvases ───────────────────────────────────────────
+// AR.js repositions its internal canvases during frame updates, briefly
+// overriding CSS. Inline style applied immediately via MutationObserver wins.
+new MutationObserver(mutations => {
+  for (const m of mutations) {
+    for (const node of m.addedNodes) {
+      if (node.nodeType === 1 && node.tagName === 'CANVAS' && node.id !== 'arCanvas') {
+        node.style.cssText = 'position:fixed!important;top:-9999px!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
+      }
+    }
+  }
+}).observe(document.body, { childList: true, subtree: true });
+
 // ── GLTF model loading ────────────────────────────────────────────────────────
 const gltfLoader   = new GLTFLoader();
 let tankGltfScene  = null;

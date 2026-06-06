@@ -101,7 +101,7 @@ const markerRoot = new THREE.Group();
 scene.add(markerRoot);
 new ArMarkerControls(arContext, markerRoot, {
   type: 'pattern',
-  patternUrl: '/ar/markers/pattern-ARFly_binary_clean_05.patt',
+  patternUrl: '/ar/markers/pattern-Lo.patt',
   smooth: true, smoothCount: 5, smoothTolerance: 0.01, smoothThreshold: 2,
 });
 

@@ -45,6 +45,7 @@ canvas:not(#arCanvas) {
   width: 1px !important;
   height: 1px !important;
   opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
 }
 

@@ -300,7 +300,7 @@ function loadAvatar(url) {
 }
 
 function buildTankGltf() {
-  const TANK_H = 0.065;
+  const TANK_H = 0.12;
   const model = tankGltfScene.clone(true);
 
   // Cloned objects aren't in a scene, so world matrices aren't auto-propagated.

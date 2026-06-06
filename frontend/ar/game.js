@@ -300,29 +300,29 @@ function loadAvatar(url) {
 }
 
 function buildTankGltf() {
-  const TANK_H = 0.065; // target height in logical units
+  const TANK_H = 0.065;
   const model = tankGltfScene.clone(true);
 
-  // Scale to target height based on largest world-space dimension
+  // Cloned objects aren't in a scene, so world matrices aren't auto-propagated.
+  // Must call this before Box3 or it only sees raw geometry without child scales.
+  model.updateMatrixWorld(true);
+
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const sf = TANK_H / (Math.max(size.x, size.y, size.z) || 1);
-  model.scale.setScalar(sf);
+  const center = box.getCenter(new THREE.Vector3());
+  window._tankBboxDbg = `${size.x.toFixed(3)}×${size.y.toFixed(3)}×${size.z.toFixed(3)} sf=${sf.toFixed(4)}`;
 
-  // Re-measure after scaling: center XZ footprint and sit bottom at Y=0
-  const box2 = new THREE.Box3().setFromObject(model);
-  model.position.set(
-    -(box2.min.x + box2.max.x) / 2,
-    -box2.min.y,
-    -(box2.min.z + box2.max.z) / 2
-  );
+  // Set scale then position in one step using pre-scale box values.
+  // After scale sf: original world point P maps to group point P*sf.
+  // So to center XZ and sit bottom at 0: position = (-center.x*sf, -min.y*sf, -center.z*sf).
+  model.scale.setScalar(sf);
+  model.position.set(-center.x * sf, -box.min.y * sf, -center.z * sf);
 
   const group = new THREE.Group();
   group.add(model);
 
-  // Tank_Turret is a named direct child in the Quaternius model
   const turretGroup = model.getObjectByName('Tank_Turret') || group;
-
   return { group, turretGroup };
 }
 
@@ -608,7 +608,8 @@ function updateDebug() {
     `game=${game?.status ?? 'null'}  tanks=${tanks.size}  trees=${sceneryGroup.children.length}`,
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
     `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
-    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}  scenery=${sceneryGroup.children.length}`,
+    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}`,
+    `tank bbox: ${window._tankBboxDbg || 'n/a'}`,
   ].join('\n');
 }
 

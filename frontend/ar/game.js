@@ -204,7 +204,7 @@ function metersToLu(mx, mz) {
 }
 
 // Canvas-texture label sprite — stays upright, depth-sorted above terrain
-function makeLabelSprite(text, { textColor = '#f7d36e', bgColor = 'rgba(10,8,5,0.72)', fontSize = 38 } = {}) {
+function makeLabelSprite(text, { textColor = '#f7d36e', bgColor = 'rgba(10,8,5,0.72)', fontSize = 38, spriteHeight = 0.06 } = {}) {
   const pad = 14;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -222,8 +222,7 @@ function makeLabelSprite(text, { textColor = '#f7d36e', bgColor = 'rgba(10,8,5,0
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
   const tex = new THREE.CanvasTexture(canvas);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  const h = 0.06; // logical units tall
-  sp.scale.set(h * canvas.width / canvas.height, h, 1);
+  sp.scale.set(spriteHeight * canvas.width / canvas.height, spriteHeight, 1);
   return sp;
 }
 
@@ -242,7 +241,7 @@ function placeTree(gltfScene, lx, lz, targetH, label) {
   model.position.set(lx - cx, ty - by, lz - cz);
   sceneryGroup.add(model);
   if (label) {
-    const sp = makeLabelSprite(label);
+    const sp = makeLabelSprite(label, { spriteHeight: 0.015 });
     sp.position.set(lx, ty + targetH + 0.03, lz);
     sceneryGroup.add(sp);
   }

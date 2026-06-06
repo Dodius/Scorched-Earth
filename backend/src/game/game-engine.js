@@ -7,11 +7,15 @@ export const FIELD_SCALES = {
 };
 
 export function getTankPosition(index, count) {
-  const angle = (Math.PI * 2 * index) / Math.max(count, 1) - Math.PI / 2;
+  const base = (Math.PI * 2 * index) / Math.max(count, 1) - Math.PI / 2;
+  const jitter = (Math.random() - 0.5) * (Math.PI / 9); // ±20°
+  const angle = base + jitter;
+  const rx = 0.28 + Math.random() * 0.14; // 0.28–0.42
+  const rz = 0.20 + Math.random() * 0.10; // 0.20–0.30
   return {
-    x: Math.cos(angle) * 0.38,
+    x: Math.cos(angle) * rx,
     y: 0.035,
-    z: Math.sin(angle) * 0.28
+    z: Math.sin(angle) * rz
   };
 }
 

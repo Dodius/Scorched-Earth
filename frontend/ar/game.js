@@ -88,7 +88,7 @@ arSource.init(() => {
 
 function initArContext() {
   arContext = new ArToolkitContext({
-    cameraParametersUrl: 'https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/data/data/camera_para.dat',
+    cameraParametersUrl: '/ar/markers/camera_para.dat',
     detectionMode: 'mono',
     maxDetectionRate: 30,
   });
@@ -492,7 +492,17 @@ document.addEventListener('pointerdown', (e) => {
 // ── render loop ───────────────────────────────────────────────────────────────
 function render() {
   requestAnimationFrame(render);
-  if (arReady && arContext && arSource?.domElement) arContext.update(arSource.domElement);
+  // arSource.ready is AR.js's own flag (true once video is streaming).
+  // Don't gate on arReady — camera_para.dat may load slowly and the callback
+  // fires later, but marker detection can start as soon as the source is ready.
+  if (arSource?.ready && arContext) {
+    arContext.update(arSource.domElement);
+    // Copy projection matrix once after arContext.init() callback fires.
+    if (arReady) {
+      camera.projectionMatrix.copy(arContext.getProjectionMatrix());
+      arReady = false;   // one-shot
+    }
+  }
   tickParticles();
   renderer.render(scene, camera);
 }

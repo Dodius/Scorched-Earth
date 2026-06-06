@@ -36,9 +36,16 @@ video {
   z-index: 1 !important;
 }
 
-/* Hide any internal canvases AR.js might add (detection processing) */
+/* Park any AR.js internal processing canvases off-screen but keep them in DOM
+   so their WebGL contexts aren't suspended on mobile. */
 canvas:not(#arCanvas) {
-  display: none !important;
+  position: fixed !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 button,

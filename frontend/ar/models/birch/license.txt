@@ -1,0 +1,11 @@
+Model Information:
+* title:	Birch Tree - Proto Series - Free
+* source:	https://sketchfab.com/3d-models/birch-tree-proto-series-free-f0203eb84beb4d638d148e2116f5dbf7
+* author:	BitGem (https://sketchfab.com/bitgem)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Birch Tree - Proto Series - Free" (https://sketchfab.com/3d-models/birch-tree-proto-series-free-f0203eb84beb4d638d148e2116f5dbf7) by BitGem (https://sketchfab.com/bitgem) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

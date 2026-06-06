@@ -8,7 +8,9 @@ const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x8
 const TRAIL_LENGTH      = 10;
 const PARTICLE_COUNT    = 60;
 const TURN_TIMEOUT_SECS = 30;
-const TREE_COUNT        = 14;
+// Game-world dimensions for medium field (logical unit = FIELD_M_W metres)
+const FIELD_M_W = 400;
+const FIELD_M_D = 300;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const markerStatus   = document.getElementById('markerStatus');
@@ -64,9 +66,10 @@ dirLight.position.set(1, 2, 1);
 scene.add(dirLight);
 
 // ── GLTF model loading ────────────────────────────────────────────────────────
-const gltfLoader    = new GLTFLoader();
-let tankGltfScene   = null;   // raw loaded scene, used as clone template
-let treeTemplates   = [];     // array of Object3D subtrees to clone
+const gltfLoader   = new GLTFLoader();
+let tankGltfScene  = null;
+let pineGltfScene  = null;
+let birchGltfScene = null;
 
 function loadGltf(url) {
   return new Promise((resolve, reject) =>
@@ -74,35 +77,13 @@ function loadGltf(url) {
   );
 }
 
-// Find the deepest ancestor that has more than one child (i.e. skip
-// Sketchfab wrapper nodes like "Sketchfab_model → scene.fbx → RootNode").
-function unwrapSingleChain(node) {
-  while (node.children.length === 1 && !node.children[0].isMesh) {
-    node = node.children[0];
-  }
-  return node;
-}
-
 const modelsReady = Promise.all([
-  loadGltf('/ar/models/tank/scene.gltf').then(gltf => {
-    tankGltfScene = gltf.scene;
-  }).catch(e => console.warn('Tank model failed to load', e)),
-
-  loadGltf('/ar/models/trees/scene.gltf').then(gltf => {
-    const content = unwrapSingleChain(gltf.scene);
-    const children = content.children.filter(c => c.children.length > 0 || c.isMesh);
-    if (children.length === 0) {
-      treeTemplates = [content];
-    } else if (children.length <= 8) {
-      treeTemplates = children;
-    } else {
-      // Sample evenly across the pack
-      const stride = Math.floor(children.length / 8);
-      for (let i = 0; i < children.length && treeTemplates.length < 8; i += stride) {
-        treeTemplates.push(children[i]);
-      }
-    }
-  }).catch(e => console.warn('Tree model failed to load', e)),
+  loadGltf('/ar/models/tank/scene.gltf').then(g  => { tankGltfScene  = g.scene; })
+    .catch(e => console.warn('Tank model failed',  e)),
+  loadGltf('/ar/models/pine/scene.gltf').then(g  => { pineGltfScene  = g.scene; })
+    .catch(e => console.warn('Pine model failed',  e)),
+  loadGltf('/ar/models/birch/scene.gltf').then(g => { birchGltfScene = g.scene; })
+    .catch(e => console.warn('Birch model failed', e)),
 ]);
 
 // ── AR.js ─────────────────────────────────────────────────────────────────────
@@ -212,61 +193,98 @@ function buildTerrain(seed = 12345) {
 
 buildTerrain();
 
-// ── scenery (trees from GLTF pack) ───────────────────────────────────────────
+// ── scenery & scale labels ────────────────────────────────────────────────────
 const sceneryGroup = new THREE.Group();
 battlefieldGroup.add(sceneryGroup);
 
-function populateScenery(seed) {
-  // Clear old scenery
-  while (sceneryGroup.children.length) {
-    const c = sceneryGroup.children[0];
-    sceneryGroup.remove(c);
+// Convert game-world metres to terrain logical units
+function metersToLu(mx, mz) {
+  return [mx / FIELD_M_W * TERRAIN_W, mz / FIELD_M_D * TERRAIN_D];
+}
+
+// Canvas-texture label sprite — stays upright, depth-sorted above terrain
+function makeLabelSprite(text, { textColor = '#f7d36e', bgColor = 'rgba(10,8,5,0.72)', fontSize = 38 } = {}) {
+  const pad = 14;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `bold ${fontSize}px "Trebuchet MS", Verdana, sans-serif`;
+  const tw = Math.ceil(ctx.measureText(text).width);
+  canvas.width = tw + pad * 2;
+  canvas.height = fontSize + pad * 2;
+  // re-set font after resize
+  ctx.font = `bold ${fontSize}px "Trebuchet MS", Verdana, sans-serif`;
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const h = 0.06; // logical units tall
+  sp.scale.set(h * canvas.width / canvas.height, h, 1);
+  return sp;
+}
+
+// Place one tree GLTF model centred at (lx, lz) with given height, optional label above
+function placeTree(gltfScene, lx, lz, targetH, label) {
+  if (!gltfScene) return;
+  const model = gltfScene.clone(true);
+  const box   = new THREE.Box3().setFromObject(model);
+  const sz    = box.getSize(new THREE.Vector3());
+  const sf    = targetH / (Math.max(sz.x, sz.y, sz.z) || 1);
+  model.scale.setScalar(sf);
+  const cx = (box.min.x + box.max.x) / 2 * sf;
+  const cz = (box.min.z + box.max.z) / 2 * sf;
+  const by = box.min.y * sf;
+  const ty = getTerrainY(lx, lz);
+  model.position.set(lx - cx, ty - by, lz - cz);
+  sceneryGroup.add(model);
+  if (label) {
+    const sp = makeLabelSprite(label);
+    sp.position.set(lx, ty + targetH + 0.03, lz);
+    sceneryGroup.add(sp);
+  }
+}
+
+function populateScenery() {
+  while (sceneryGroup.children.length) sceneryGroup.remove(sceneryGroup.children[0]);
+
+  const PINE_H  = 0.22;
+  const BIRCH_H = 0.17;
+
+  // 4 pines at ±100 m corners
+  for (const [mx, mz] of [[100,100],[-100,100],[100,-100],[-100,-100]]) {
+    const [lx, lz] = metersToLu(mx, mz);
+    placeTree(pineGltfScene,  lx, lz, PINE_H,  `Pine ${mx}m,${mz}m`);
   }
 
-  if (treeTemplates.length === 0) return;
+  // 4 birches at ±50 m corners
+  for (const [mx, mz] of [[50,50],[-50,50],[50,-50],[-50,-50]]) {
+    const [lx, lz] = metersToLu(mx, mz);
+    placeTree(birchGltfScene, lx, lz, BIRCH_H, `Birch ${mx}m,${mz}m`);
+  }
 
-  const rng = (() => {
-    let s = seed ^ 0xdeadbeef;
-    return () => { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0xffffffff; };
-  })();
+  // Scale-reference labels floating above terrain
+  const fieldLabel = makeLabelSprite(`${FIELD_M_W}m × ${FIELD_M_D}m  (medium field)`,
+    { textColor: '#89e163', fontSize: 34 });
+  fieldLabel.position.set(0, 0.12, 0);
+  sceneryGroup.add(fieldLabel);
 
-  // Measure a fresh clone so we get the true local-space extents of the template.
-  // Tree pack vertices are offset from origin (e.g. X≈1300) so we must also
-  // subtract the footprint centre when placing each instance.
-  const sample = treeTemplates[0].clone(true);
-  const sampleBox = new THREE.Box3().setFromObject(sample);
-  const sampleSize = new THREE.Vector3();
-  sampleBox.getSize(sampleSize);
-  const tallestDim = Math.max(sampleSize.x, sampleSize.y, sampleSize.z) || 1;
-  const targetTreeHeight = 0.20;
-  const baseScale = targetTreeHeight / tallestDim;
-  // Footprint centre and bottom in template-local space (pre-scale)
-  const tmplCX = (sampleBox.min.x + sampleBox.max.x) / 2;
-  const tmplCZ = (sampleBox.min.z + sampleBox.max.z) / 2;
-  const tmplMinY = sampleBox.min.y;
+  // X-axis ruler ticks: -200, 0, +200
+  for (const mx of [-200, 0, 200]) {
+    const [lx] = metersToLu(mx, 0);
+    const sp = makeLabelSprite(`${mx > 0 ? '+' : ''}${mx}m`, { textColor: '#f5bf52', fontSize: 28 });
+    sp.position.set(lx, getTerrainY(lx, 0) + 0.035, 0);
+    sceneryGroup.add(sp);
+  }
 
-  const MARGIN = 0.12;
-  for (let i = 0; i < TREE_COUNT; i++) {
-    const template = treeTemplates[Math.floor(rng() * treeTemplates.length)];
-    const obj = template.clone(true);
-
-    const x = (rng() - 0.5) * (TERRAIN_W - MARGIN * 2);
-    const z = (rng() - 0.5) * (TERRAIN_D - MARGIN * 2);
-    const y = getTerrainY(x, z);
-
-    const scale = baseScale * (0.75 + rng() * 0.65);
-    obj.scale.setScalar(scale);
-
-    // Centre the footprint at (x, z) and sit the bottom on the terrain.
-    // Multiply the pre-scale offsets by scale to get their post-scale value.
-    obj.position.set(
-      x - tmplCX * scale,
-      y - tmplMinY * scale,
-      z - tmplCZ * scale
-    );
-    obj.rotation.y = rng() * Math.PI * 2;
-
-    sceneryGroup.add(obj);
+  // Z-axis ruler ticks: -150, +150
+  for (const mz of [-150, 150]) {
+    const [, lz] = metersToLu(0, mz);
+    const sp = makeLabelSprite(`${mz > 0 ? '+' : ''}${mz}m`, { textColor: '#f5bf52', fontSize: 28 });
+    sp.position.set(0, getTerrainY(0, lz) + 0.035, lz);
+    sceneryGroup.add(sp);
   }
 }
 
@@ -409,7 +427,7 @@ async function initScene(nextGame) {
   await modelsReady;
   const alive = game.players.filter((p) => p.alive !== false);
   await Promise.all(alive.map((p, i) => addTank(p, i)));
-  populateScenery(seed);
+  populateScenery();
 
   setHud(`${game.status} · ${tanks.size} tank${tanks.size === 1 ? '' : 's'}`);
   const me = game.players.find((p) => p.id === playerId);
@@ -606,7 +624,7 @@ function updateDebug() {
     `game=${game?.status ?? 'null'}  tanks=${tanks.size}  trees=${sceneryGroup.children.length}`,
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
     `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
-    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  trees=${treeTemplates.length}  placed=${sceneryGroup.children.length}`,
+    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}  scenery=${sceneryGroup.children.length}`,
   ].join('\n');
 }
 

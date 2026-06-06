@@ -25,6 +25,7 @@ const elevationValue = document.getElementById('elevationValue');
 const powerInput     = document.getElementById('powerInput');
 const powerValue     = document.getElementById('powerValue');
 const fireButton     = document.getElementById('fireButton');
+const debugPanel     = document.getElementById('debugPanel');
 
 // ── URL params / socket ───────────────────────────────────────────────────────
 const params       = new URLSearchParams(window.location.search);
@@ -102,16 +103,13 @@ arSource$.init(() => {
       objectFit: 'cover', zIndex: '0', display: 'block',
     });
   }
-  arSource = arSource$;   // expose once ready
-  setTimeout(handleResize, 2000);
+  arSource = arSource$;
 });
 
 function handleResize() {
-  if (arSource$?.onResizeElement) {
-    arSource$.onResizeElement();
-    arSource$.copyElementSizeTo(renderer.domElement);
-    if (arContext?.arController) arContext.arController.orientation = arSource$.getVideoOrientation();
-  }
+  // Do NOT call arSource$.onResizeElement() — it repositions the video
+  // to AR.js's internal aspect ratio and crops the screen edges.
+  // Our CSS (video { width:100vw; height:100vh; object-fit:cover }) handles it.
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', handleResize);
@@ -470,11 +468,30 @@ document.addEventListener('pointerdown', (e) => {
   focusCameraAt(e.clientX, e.clientY);
 });
 
+// ── debug panel ───────────────────────────────────────────────────────────────
+let debugTick = 0;
+function updateDebug() {
+  if (++debugTick % 30 !== 0) return;   // update ~once per second at 30fps
+  const pm = camera.projectionMatrix.elements;
+  const fx = pm[0].toFixed(2), fy = pm[5].toFixed(2);
+  const bfChildren = battlefieldGroup.children.length;
+  const vid = arSource$?.domElement;
+  const vidState = vid ? `${vid.readyState} ${vid.videoWidth}x${vid.videoHeight}` : 'none';
+  debugPanel.textContent = [
+    `src.ready=${arSource$?.ready ?? '?'}  marker=${markerRoot.visible}`,
+    `game=${game?.status ?? 'null'}  tanks=${tanks.size}  bf.kids=${bfChildren}`,
+    `cam fx=${fx} fy=${fy}  (identity=1.00)`,
+    `vid readyState=${vidState}`,
+    `socket=${socket.connected ? 'ok' : 'dc'}`,
+  ].join('\n');
+}
+
 // ── render loop ───────────────────────────────────────────────────────────────
 function render() {
   requestAnimationFrame(render);
   if (arSource$?.ready && arContext) arContext.update(arSource$.domElement);
   tickParticles();
+  updateDebug();
   renderer.render(scene, camera);
 }
 render();

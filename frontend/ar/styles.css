@@ -276,6 +276,23 @@ input {
   font-weight: 800;
 }
 
+.debug-panel {
+  position: fixed;
+  z-index: 50;
+  bottom: 110px;
+  left: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 0.7rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: pre;
+  pointer-events: none;
+  line-height: 1.5;
+}
+
 @media (max-width: 760px) {
   .controls {
     grid-template-columns: 1fr 1fr;

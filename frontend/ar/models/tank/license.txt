@@ -1,0 +1,11 @@
+Model Information:
+* title:	Low poly stylized tank
+* source:	https://sketchfab.com/3d-models/low-poly-stylized-tank-230812ff2fa74aecbd4eb6e312302b52
+* author:	MrEliptik (https://sketchfab.com/mreliptik)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Low poly stylized tank" (https://sketchfab.com/3d-models/low-poly-stylized-tank-230812ff2fa74aecbd4eb6e312302b52) by MrEliptik (https://sketchfab.com/mreliptik) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

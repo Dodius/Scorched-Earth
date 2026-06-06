@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -7,6 +8,7 @@ const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x8
 const TRAIL_LENGTH      = 10;
 const PARTICLE_COUNT    = 60;
 const TURN_TIMEOUT_SECS = 30;
+const TREE_COUNT        = 14;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const markerStatus   = document.getElementById('markerStatus');
@@ -17,6 +19,7 @@ const focusReticle   = document.getElementById('focusReticle');
 const controls       = document.getElementById('controls');
 const waitingOverlay = document.getElementById('waitingOverlay');
 const gameOverEl     = document.getElementById('gameOver');
+const debugPanel     = document.getElementById('debugPanel');
 const rotateLeft     = document.getElementById('rotateLeft');
 const rotateRight    = document.getElementById('rotateRight');
 const azimuthValue   = document.getElementById('azimuthValue');
@@ -25,7 +28,6 @@ const elevationValue = document.getElementById('elevationValue');
 const powerInput     = document.getElementById('powerInput');
 const powerValue     = document.getElementById('powerValue');
 const fireButton     = document.getElementById('fireButton');
-const debugPanel     = document.getElementById('debugPanel');
 
 // ── URL params / socket ───────────────────────────────────────────────────────
 const params       = new URLSearchParams(window.location.search);
@@ -57,15 +59,53 @@ const scene  = new THREE.Scene();
 const camera = new THREE.Camera();
 scene.add(camera);
 scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(0, 1, 1);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(1, 2, 1);
 scene.add(dirLight);
 
-// ── AR.js: context + marker controls — set up synchronously at module load ───
-// Pattern: create context and markers immediately; only gate arContext.update()
-// on arSource.ready. Do NOT wait for 'canplay' — that event can fire before
-// the listener is added and the whole scene init would be skipped.
+// ── GLTF model loading ────────────────────────────────────────────────────────
+const gltfLoader    = new GLTFLoader();
+let tankGltfScene   = null;   // raw loaded scene, used as clone template
+let treeTemplates   = [];     // array of Object3D subtrees to clone
 
+function loadGltf(url) {
+  return new Promise((resolve, reject) =>
+    gltfLoader.load(url, gltf => resolve(gltf), undefined, reject)
+  );
+}
+
+// Find the deepest ancestor that has more than one child (i.e. skip
+// Sketchfab wrapper nodes like "Sketchfab_model → scene.fbx → RootNode").
+function unwrapSingleChain(node) {
+  while (node.children.length === 1 && !node.children[0].isMesh) {
+    node = node.children[0];
+  }
+  return node;
+}
+
+const modelsReady = Promise.all([
+  loadGltf('/ar/models/tank/scene.gltf').then(gltf => {
+    tankGltfScene = gltf.scene;
+  }).catch(e => console.warn('Tank model failed to load', e)),
+
+  loadGltf('/ar/models/trees/scene.gltf').then(gltf => {
+    const content = unwrapSingleChain(gltf.scene);
+    const children = content.children.filter(c => c.children.length > 0 || c.isMesh);
+    if (children.length === 0) {
+      treeTemplates = [content];
+    } else if (children.length <= 8) {
+      treeTemplates = children;
+    } else {
+      // Sample evenly across the pack
+      const stride = Math.floor(children.length / 8);
+      for (let i = 0; i < children.length && treeTemplates.length < 8; i += stride) {
+        treeTemplates.push(children[i]);
+      }
+    }
+  }).catch(e => console.warn('Tree model failed to load', e)),
+]);
+
+// ── AR.js ─────────────────────────────────────────────────────────────────────
 const arContext = new ArToolkitContext({
   cameraParametersUrl: '/ar/markers/camera_para.dat',
   detectionMode: 'mono',
@@ -77,7 +117,6 @@ arContext.init(() => {
 
 const markerRoot = new THREE.Group();
 scene.add(markerRoot);
-
 new ArMarkerControls(arContext, markerRoot, {
   type: 'pattern',
   patternUrl: '/ar/markers/pattern-ARFly_binary_clean_05.patt',
@@ -86,9 +125,6 @@ new ArMarkerControls(arContext, markerRoot, {
 
 const battlefieldGroup = new THREE.Group();
 markerRoot.add(battlefieldGroup);
-
-// ── Webcam source — async, only needed to feed arContext.update() ─────────────
-let arSource = null;
 
 const arSource$ = new ArToolkitSource({ sourceType: 'webcam' });
 arSource$.init(() => {
@@ -103,18 +139,14 @@ arSource$.init(() => {
       objectFit: 'cover', zIndex: '0', display: 'block',
     });
   }
-  arSource = arSource$;
 });
 
 function handleResize() {
-  // Do NOT call arSource$.onResizeElement() — it repositions the video
-  // to AR.js's internal aspect ratio and crops the screen edges.
-  // Our CSS (video { width:100vw; height:100vh; object-fit:cover }) handles it.
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', handleResize);
 
-// ── marker visibility polling ─────────────────────────────────────────────────
+// ── marker visibility ─────────────────────────────────────────────────────────
 function pollMarkerVisible() {
   const visible = markerRoot.visible;
   markerStatus.textContent = visible ? 'Marker locked' : 'Find marker';
@@ -135,12 +167,13 @@ function hashSeed(str) {
 }
 
 function sampleHeight(nx, nz, seed) {
-  const fade = Math.max(0, (1 - Math.pow(Math.abs(nx) * 1.8, 3)) * (1 - Math.pow(Math.abs(nz) * 1.8, 3)));
+  const fade = Math.max(0, (1 - Math.pow(Math.abs(nx) * 1.9, 4)) * (1 - Math.pow(Math.abs(nz) * 1.9, 4)));
   const s = seed * 0.0001;
+  // Increased amplitude: ~2.5× from original
   return (
-    Math.sin(nx * 9.3 + s) * Math.cos(nz * 7.1 + s * 1.3) * 0.022 +
-    Math.sin(nx * 17.7 - s * 0.7) * Math.cos(nz * 13.4 + s) * 0.012 +
-    Math.cos(nx * 5.1 + s * 2.1) * Math.sin(nz * 6.3 - s * 0.5) * 0.018
+    Math.sin(nx * 9.3 + s) * Math.cos(nz * 7.1 + s * 1.3) * 0.052 +
+    Math.sin(nx * 17.7 - s * 0.7) * Math.cos(nz * 13.4 + s) * 0.028 +
+    Math.cos(nx * 5.1 + s * 2.1) * Math.sin(nz * 6.3 - s * 0.5) * 0.042
   ) * fade;
 }
 
@@ -156,27 +189,77 @@ function buildTerrain(seed = 12345) {
     terrainMesh.material.dispose();
     terrainMesh = null;
   }
-  const geo = new THREE.PlaneGeometry(TERRAIN_W, TERRAIN_D, 28, 22);
+  const geo = new THREE.PlaneGeometry(TERRAIN_W, TERRAIN_D, 40, 30);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     pos.setY(i, sampleHeight(pos.getX(i) / TERRAIN_W, pos.getZ(i) / TERRAIN_D, seed));
   }
   geo.computeVertexNormals();
-  terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x3a6b2a, roughness: 0.9, metalness: 0.0 }));
+  terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: 0x4a7a30, roughness: 0.95, metalness: 0.0,
+  }));
   battlefieldGroup.add(terrainMesh);
 
+  // Field border
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(TERRAIN_W, 0.002, TERRAIN_D)),
-    new THREE.LineBasicMaterial({ color: 0xf7d36e, opacity: 0.5, transparent: true })
+    new THREE.LineBasicMaterial({ color: 0xf7d36e, opacity: 0.45, transparent: true })
   );
   border.position.y = 0.001;
   battlefieldGroup.add(border);
 }
 
-buildTerrain(); // initial terrain; rebuilt with game seed in initScene()
+buildTerrain();
 
-// ── tank building ─────────────────────────────────────────────────────────────
+// ── scenery (trees from GLTF pack) ───────────────────────────────────────────
+const sceneryGroup = new THREE.Group();
+battlefieldGroup.add(sceneryGroup);
+
+function populateScenery(seed) {
+  // Clear old scenery
+  while (sceneryGroup.children.length) {
+    const c = sceneryGroup.children[0];
+    sceneryGroup.remove(c);
+  }
+
+  if (treeTemplates.length === 0) return;
+
+  const rng = (() => {
+    let s = seed ^ 0xdeadbeef;
+    return () => { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0xffffffff; };
+  })();
+
+  // Compute bounding box of first template to decide scale
+  const sampleBox = new THREE.Box3().setFromObject(treeTemplates[0]);
+  const sampleSize = new THREE.Vector3();
+  sampleBox.getSize(sampleSize);
+  const tallestDim = Math.max(sampleSize.x, sampleSize.y, sampleSize.z) || 1;
+  const targetTreeHeight = 0.14;   // logical units — roughly 3× tank height
+  const baseScale = targetTreeHeight / tallestDim;
+
+  const MARGIN = 0.12;  // stay away from field edges
+  for (let i = 0; i < TREE_COUNT; i++) {
+    const template = treeTemplates[Math.floor(rng() * treeTemplates.length)];
+    const obj = template.clone(true);
+
+    const x = (rng() - 0.5) * (TERRAIN_W - MARGIN * 2);
+    const z = (rng() - 0.5) * (TERRAIN_D - MARGIN * 2);
+    const y = getTerrainY(x, z);
+
+    const scale = baseScale * (0.75 + rng() * 0.65);
+    obj.scale.setScalar(scale);
+
+    // Ensure bottom of object sits on terrain
+    const box = new THREE.Box3().setFromObject(obj);
+    obj.position.set(x, y - box.min.y * scale, z);
+    obj.rotation.y = rng() * Math.PI * 2;
+
+    sceneryGroup.add(obj);
+  }
+}
+
+// ── tank building (GLTF) ──────────────────────────────────────────────────────
 const textureLoader = new THREE.TextureLoader();
 const avatarCache   = new Map();
 
@@ -187,46 +270,94 @@ function loadAvatar(url) {
   });
 }
 
-function buildTankMesh(colorHex) {
+function buildTankGltf(colorHex) {
+  // Clone the loaded GLTF scene
+  const model = tankGltfScene.clone(true);
+
+  // Scale so tank is ~0.088 logical units wide
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxFootprint = Math.max(size.x, size.z) || 1;
+  const scaleFactor  = 0.088 / maxFootprint;
+  model.scale.setScalar(scaleFactor);
+
+  // Sit the bottom of the tank on y=0
+  const box2 = new THREE.Box3().setFromObject(model);
+  model.position.y = -box2.min.y;
+
+  // Tint player-coloured parts (skip near-black materials)
+  const playerColor = new THREE.Color(colorHex);
+  model.traverse(child => {
+    if (!child.isMesh) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    child.material = mats.map(m => {
+      const clone = m.clone();
+      const lum = clone.color.r * 0.299 + clone.color.g * 0.587 + clone.color.b * 0.114;
+      if (lum > 0.15) clone.color.lerp(playerColor, 0.5);
+      return clone;
+    });
+    if (!Array.isArray(child.material)) child.material = child.material[0];
+  });
+
+  // Turret and barrel nodes for azimuth/elevation control
+  const turretNode = model.getObjectByName('Turret.014') || null;
+  const canonNode  = model.getObjectByName('Canon.014')  || null;
+
+  const group = new THREE.Group();
+  group.add(model);
+
+  // Wrap turret in a pivot so we can rotate without fighting the baked matrix
+  let turretPivot = null, canonPivot = null;
+  if (turretNode) {
+    turretPivot = new THREE.Group();
+    turretPivot.position.copy(turretNode.getWorldPosition(new THREE.Vector3())
+      .applyMatrix4(group.matrixWorld.clone().invert()));
+    group.add(turretPivot);
+    // not directly used for rotation — rotate whole group for azimuth for now
+  }
+
+  return { group, turretNode, canonNode };
+}
+
+function buildTankGeometric(colorHex) {
   const group = new THREE.Group();
   const hullMat  = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6, metalness: 0.3 });
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.9 });
-
   const hull = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.036, 0.065), hullMat);
   hull.position.y = 0.018;
   group.add(hull);
-
   const trackL = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.018, 0.068), trackMat);
   trackL.position.set(-0.048, 0.009, 0);
   group.add(trackL);
-  const trackR = trackL.clone();
-  trackR.position.set(0.048, 0.009, 0);
-  group.add(trackR);
-
-  // turretGroup rotates Y for azimuth
-  const turretGroup = new THREE.Group();
-  turretGroup.position.y = 0.036;
-  group.add(turretGroup);
+  const trackR = trackL.clone(); trackR.position.set(0.048, 0.009, 0); group.add(trackR);
+  const turretGroup = new THREE.Group(); turretGroup.position.y = 0.036; group.add(turretGroup);
   const turretMat = new THREE.MeshStandardMaterial({ color: 0x1a1a18, roughness: 0.5, metalness: 0.5 });
   turretGroup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.028, 0.022, 8), turretMat));
-
-  // barrelGroup tilts X for elevation; barrel tip points toward -Z
-  const barrelGroup = new THREE.Group();
-  barrelGroup.position.set(0, 0.008, 0);
-  turretGroup.add(barrelGroup);
+  const barrelGroup = new THREE.Group(); barrelGroup.position.set(0, 0.008, 0); turretGroup.add(barrelGroup);
   const barrelMat = new THREE.MeshStandardMaterial({ color: 0xd8cdb8, roughness: 0.4, metalness: 0.6 });
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.009, 0.11, 6), barrelMat);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0, -0.055);
-  barrelGroup.add(barrel);
-
+  barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0, -0.055); barrelGroup.add(barrel);
   return { group, turretGroup, barrelGroup };
 }
 
 async function addTank(player, index) {
-  const { group, turretGroup } = buildTankMesh(TANK_COLORS[index % TANK_COLORS.length]);
-  // positions are in logical units — battlefieldGroup.scale handles field size
-  group.position.set(player.position.x, getTerrainY(player.position.x, player.position.z) + 0.003, player.position.z);
+  const colorHex = TANK_COLORS[index % TANK_COLORS.length];
+  let group, turretGroup;
+
+  if (tankGltfScene) {
+    const result = buildTankGltf(colorHex);
+    group = result.group;
+    // Whole tank group rotates for azimuth
+    turretGroup = group;
+  } else {
+    const result = buildTankGeometric(colorHex);
+    group       = result.group;
+    turretGroup = result.turretGroup;
+  }
+
+  const ty = getTerrainY(player.position.x, player.position.z);
+  group.position.set(player.position.x, ty, player.position.z);
   turretGroup.rotation.y = THREE.MathUtils.degToRad(player.azimuth || 0);
 
   if (player.avatarUrl) {
@@ -234,7 +365,7 @@ async function addTank(player, index) {
     if (tex) {
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
       sprite.scale.set(0.1, 0.1, 1);
-      sprite.position.set(0, 0.19, 0);
+      sprite.position.set(0, 0.22, 0);
       group.add(sprite);
     }
   }
@@ -252,6 +383,7 @@ function removeTank(id) {
 
 function clearBattlefield() {
   [...tanks.keys()].forEach(removeTank);
+  while (sceneryGroup.children.length) sceneryGroup.remove(sceneryGroup.children[0]);
 }
 
 function rotateTank(id, azimuth) {
@@ -266,11 +398,16 @@ async function initScene(nextGame) {
   fieldScale  = FIELD_SCALES[game.config?.fieldSize] || 1;
   battlefieldGroup.scale.setScalar(fieldScale);
 
-  buildTerrain(hashSeed(game.id));
+  const seed = hashSeed(game.id);
+  buildTerrain(seed);
+
   clearBattlefield();
 
+  // Wait for models, then build tanks and scenery
+  await modelsReady;
   const alive = game.players.filter((p) => p.alive !== false);
   await Promise.all(alive.map((p, i) => addTank(p, i)));
+  populateScenery(seed);
 
   setHud(`${game.status} · ${tanks.size} tank${tanks.size === 1 ? '' : 's'}`);
   const me = game.players.find((p) => p.id === playerId);
@@ -331,12 +468,9 @@ function spawnExplosion(point, hit) {
   const positions  = new Float32Array(PARTICLE_COUNT * 3);
   const velocities = new Float32Array(PARTICLE_COUNT * 3);
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    positions[i * 3]     = point.x;
-    positions[i * 3 + 1] = point.y;
-    positions[i * 3 + 2] = point.z;
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.random() * Math.PI;
-    const spd   = 0.003 + Math.random() * 0.006;
+    positions[i * 3]     = point.x; positions[i * 3 + 1] = point.y; positions[i * 3 + 2] = point.z;
+    const theta = Math.random() * Math.PI * 2, phi = Math.random() * Math.PI;
+    const spd = 0.003 + Math.random() * 0.006;
     velocities[i * 3]     = Math.sin(phi) * Math.cos(theta) * spd;
     velocities[i * 3 + 1] = Math.abs(Math.cos(phi)) * spd + 0.002;
     velocities[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * spd;
@@ -364,10 +498,8 @@ function tickParticles() {
     const t = (now - sys.startTime) / sys.duration;
     if (t >= 1) {
       sys.done = true;
-      battlefieldGroup.remove(sys.pts);
-      battlefieldGroup.remove(sys.ring);
-      sys.geo.dispose(); sys.mat.dispose();
-      sys.ring.geometry.dispose(); sys.ringMat.dispose();
+      battlefieldGroup.remove(sys.pts); battlefieldGroup.remove(sys.ring);
+      sys.geo.dispose(); sys.mat.dispose(); sys.ring.geometry.dispose(); sys.ringMat.dispose();
       continue;
     }
     const pos = sys.geo.attributes.position.array;
@@ -419,11 +551,9 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     await new Promise((r) => setTimeout(r, 45));
   }
 
-  battlefieldGroup.remove(proj);
-  projGeo.dispose(); projMat.dispose();
+  battlefieldGroup.remove(proj); projGeo.dispose(); projMat.dispose();
   trailMeshes.forEach((m) => battlefieldGroup.remove(m));
-  trailGeos.forEach((g) => g.dispose());
-  trailMats.forEach((m) => m.dispose());
+  trailGeos.forEach((g) => g.dispose()); trailMats.forEach((m) => m.dispose());
 
   spawnExplosion(impactPoint, hit);
   if (hit && targetId) removeTank(targetId);
@@ -435,8 +565,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
 
 // ── tap to focus ──────────────────────────────────────────────────────────────
 function showFocusReticle(x, y, ok) {
-  focusReticle.style.left = `${x}px`;
-  focusReticle.style.top  = `${y}px`;
+  focusReticle.style.left = `${x}px`; focusReticle.style.top = `${y}px`;
   focusReticle.style.borderColor = ok ? '#89e163' : '#f7d36e';
   focusReticle.hidden = false;
   clearTimeout(focusReticleTimer);
@@ -447,18 +576,12 @@ async function focusCameraAt(clientX, clientY) {
   const track = arSource$?.domElement?.srcObject?.getVideoTracks?.()[0] || null;
   let ok = false;
   if (track?.applyConstraints) {
-    const x = clientX / window.innerWidth;
-    const y = clientY / window.innerHeight;
-    const caps = track.getCapabilities?.() || {};
-    const modes = caps.focusMode || [];
+    const x = clientX / window.innerWidth, y = clientY / window.innerHeight;
+    const caps = track.getCapabilities?.() || {}, modes = caps.focusMode || [];
     const fm = modes.includes('single-shot') ? 'single-shot' : modes.includes('continuous') ? 'continuous' : null;
-    const attempts = fm
-      ? [{ advanced: [{ focusMode: fm, pointsOfInterest: [{ x, y }] }] }, { advanced: [{ focusMode: fm }] }]
-      : [];
+    const attempts = fm ? [{ advanced: [{ focusMode: fm, pointsOfInterest: [{ x, y }] }] }, { advanced: [{ focusMode: fm }] }] : [];
     attempts.push({ advanced: [{ pointsOfInterest: [{ x, y }] }] });
-    for (const c of attempts) {
-      try { await track.applyConstraints(c); ok = true; break; } catch { ok = false; }
-    }
+    for (const c of attempts) { try { await track.applyConstraints(c); ok = true; break; } catch { ok = false; } }
   }
   showFocusReticle(clientX, clientY, ok);
 }
@@ -471,18 +594,17 @@ document.addEventListener('pointerdown', (e) => {
 // ── debug panel ───────────────────────────────────────────────────────────────
 let debugTick = 0;
 function updateDebug() {
-  if (++debugTick % 30 !== 0) return;   // update ~once per second at 30fps
+  if (++debugTick % 30 !== 0) return;
   const pm = camera.projectionMatrix.elements;
   const fx = pm[0].toFixed(2), fy = pm[5].toFixed(2);
-  const bfChildren = battlefieldGroup.children.length;
   const vid = arSource$?.domElement;
   const vidState = vid ? `${vid.readyState} ${vid.videoWidth}x${vid.videoHeight}` : 'none';
   debugPanel.textContent = [
     `src.ready=${arSource$?.ready ?? '?'}  marker=${markerRoot.visible}`,
-    `game=${game?.status ?? 'null'}  tanks=${tanks.size}  bf.kids=${bfChildren}`,
+    `game=${game?.status ?? 'null'}  tanks=${tanks.size}  trees=${sceneryGroup.children.length}`,
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
-    `vid readyState=${vidState}`,
-    `socket=${socket.connected ? 'ok' : 'dc'}`,
+    `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
+    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  trees=${treeTemplates.length}`,
   ].join('\n');
 }
 
@@ -501,43 +623,24 @@ function escapeHtml(v) {
   return String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
 }
 
-socket.on('connect', () => {
-  setHud('Online');
-  socket.emit('rejoin-game', { gameId, playerId });
-});
+socket.on('connect', () => { setHud('Online'); socket.emit('rejoin-game', { gameId, playerId }); });
 socket.on('disconnect', () => setHud('Offline'));
 
-socket.on('game-state', ({ game: nextGame }) => {
-  initScene(nextGame);
-  setHud(nextGame.status);
-});
-
-socket.on('game-started', ({ game: nextGame }) => {
-  initScene(nextGame);
-  setHud('Playing');
-  startCountdown();
-  updateControls();
-});
+socket.on('game-state', ({ game: nextGame }) => { initScene(nextGame); setHud(nextGame.status); });
+socket.on('game-started', ({ game: nextGame }) => { initScene(nextGame); setHud('Playing'); startCountdown(); updateControls(); });
 
 socket.on('your-turn', ({ playerId: nextTurn }) => {
   currentTurn = nextTurn;
   if (game) game.currentTurn = nextTurn;
-  startCountdown();
-  updateControls();
+  startCountdown(); updateControls();
 });
 
 socket.on('tank-rotated', ({ playerId: rotatedId, azimuth }) => {
   rotateTank(rotatedId, azimuth);
-  if (rotatedId === playerId) {
-    myAzimuth = azimuth;
-    azimuthValue.textContent = `${Math.round(myAzimuth)} deg`;
-  }
+  if (rotatedId === playerId) { myAzimuth = azimuth; azimuthValue.textContent = `${Math.round(myAzimuth)} deg`; }
 });
 
-socket.on('projectile-launched', (payload) => {
-  stopCountdown();
-  animateProjectile(payload);
-});
+socket.on('projectile-launched', (payload) => { stopCountdown(); animateProjectile(payload); });
 
 socket.on('turn-timeout', ({ playerId: timedOutId }) => {
   const p = game?.players.find((item) => item.id === timedOutId);
@@ -551,10 +654,8 @@ socket.on('player-eliminated', ({ playerId: eliminatedId }) => {
 });
 
 socket.on('game-over', ({ winnerId, game: finalGame }) => {
-  stopCountdown();
-  game = finalGame || game;
-  controls.hidden = true;
-  waitingOverlay.hidden = true;
+  stopCountdown(); game = finalGame || game;
+  controls.hidden = true; waitingOverlay.hidden = true;
   const winner = game?.players.find((p) => p.id === winnerId);
   gameOverEl.innerHTML = `<div>
     <img src="${escapeHtml(winner?.avatarUrl || storedPlayer.avatarUrl || '')}" alt="" />
@@ -567,10 +668,7 @@ socket.on('game-over', ({ winnerId, game: finalGame }) => {
   }, 5000);
 });
 
-socket.on('error-message', ({ error }) => {
-  waitingOverlay.hidden = false;
-  waitingOverlay.textContent = error;
-});
+socket.on('error-message', ({ error }) => { waitingOverlay.hidden = false; waitingOverlay.textContent = error; });
 
 // ── controls ──────────────────────────────────────────────────────────────────
 rotateLeft.addEventListener('click',  () => setAzimuth(myAzimuth - 5));
@@ -579,8 +677,7 @@ elevationInput.addEventListener('input', () => { elevationValue.textContent = `$
 powerInput.addEventListener('input',     () => { powerValue.textContent = `${powerInput.value}%`; });
 fireButton.addEventListener('click', () => {
   fireButton.disabled = true;
-  socket.emit(
-    'fire',
+  socket.emit('fire',
     { gameId, playerId, azimuth: myAzimuth, elevation: Number(elevationInput.value), power: Number(powerInput.value) },
     () => { fireButton.disabled = false; }
   );

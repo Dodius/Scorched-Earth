@@ -230,15 +230,22 @@ function populateScenery(seed) {
     return () => { s = (Math.imul(s, 1664525) + 1013904223) | 0; return (s >>> 0) / 0xffffffff; };
   })();
 
-  // Compute bounding box of first template to decide scale
-  const sampleBox = new THREE.Box3().setFromObject(treeTemplates[0]);
+  // Measure a fresh clone so we get the true local-space extents of the template.
+  // Tree pack vertices are offset from origin (e.g. X≈1300) so we must also
+  // subtract the footprint centre when placing each instance.
+  const sample = treeTemplates[0].clone(true);
+  const sampleBox = new THREE.Box3().setFromObject(sample);
   const sampleSize = new THREE.Vector3();
   sampleBox.getSize(sampleSize);
   const tallestDim = Math.max(sampleSize.x, sampleSize.y, sampleSize.z) || 1;
-  const targetTreeHeight = 0.14;   // logical units — roughly 3× tank height
+  const targetTreeHeight = 0.20;
   const baseScale = targetTreeHeight / tallestDim;
+  // Footprint centre and bottom in template-local space (pre-scale)
+  const tmplCX = (sampleBox.min.x + sampleBox.max.x) / 2;
+  const tmplCZ = (sampleBox.min.z + sampleBox.max.z) / 2;
+  const tmplMinY = sampleBox.min.y;
 
-  const MARGIN = 0.12;  // stay away from field edges
+  const MARGIN = 0.12;
   for (let i = 0; i < TREE_COUNT; i++) {
     const template = treeTemplates[Math.floor(rng() * treeTemplates.length)];
     const obj = template.clone(true);
@@ -250,9 +257,13 @@ function populateScenery(seed) {
     const scale = baseScale * (0.75 + rng() * 0.65);
     obj.scale.setScalar(scale);
 
-    // Ensure bottom of object sits on terrain
-    const box = new THREE.Box3().setFromObject(obj);
-    obj.position.set(x, y - box.min.y * scale, z);
+    // Centre the footprint at (x, z) and sit the bottom on the terrain.
+    // Multiply the pre-scale offsets by scale to get their post-scale value.
+    obj.position.set(
+      x - tmplCX * scale,
+      y - tmplMinY * scale,
+      z - tmplCZ * scale
+    );
     obj.rotation.y = rng() * Math.PI * 2;
 
     sceneryGroup.add(obj);
@@ -271,20 +282,23 @@ function loadAvatar(url) {
 }
 
 function buildTankGltf(colorHex) {
-  // Clone the loaded GLTF scene
   const model = tankGltfScene.clone(true);
 
-  // Scale so tank is ~0.088 logical units wide
+  // Measure real world-space size (includes Sketchfab wrapper rotations + Base.014 scale=100)
   const box = new THREE.Box3().setFromObject(model);
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxFootprint = Math.max(size.x, size.z) || 1;
-  const scaleFactor  = 0.088 / maxFootprint;
+  const scaleFactor  = 0.13 / maxFootprint;
   model.scale.setScalar(scaleFactor);
 
-  // Sit the bottom of the tank on y=0
+  // Re-measure after scaling, then center footprint at group origin and sit bottom at Y=0
   const box2 = new THREE.Box3().setFromObject(model);
-  model.position.y = -box2.min.y;
+  model.position.set(
+    -(box2.min.x + box2.max.x) / 2,
+    -box2.min.y,
+    -(box2.min.z + box2.max.z) / 2
+  );
 
   // Tint player-coloured parts (skip near-black materials)
   const playerColor = new THREE.Color(colorHex);
@@ -300,23 +314,11 @@ function buildTankGltf(colorHex) {
     if (!Array.isArray(child.material)) child.material = child.material[0];
   });
 
-  // Turret and barrel nodes for azimuth/elevation control
   const turretNode = model.getObjectByName('Turret.014') || null;
   const canonNode  = model.getObjectByName('Canon.014')  || null;
 
   const group = new THREE.Group();
   group.add(model);
-
-  // Wrap turret in a pivot so we can rotate without fighting the baked matrix
-  let turretPivot = null, canonPivot = null;
-  if (turretNode) {
-    turretPivot = new THREE.Group();
-    turretPivot.position.copy(turretNode.getWorldPosition(new THREE.Vector3())
-      .applyMatrix4(group.matrixWorld.clone().invert()));
-    group.add(turretPivot);
-    // not directly used for rotation — rotate whole group for azimuth for now
-  }
-
   return { group, turretNode, canonNode };
 }
 
@@ -604,7 +606,7 @@ function updateDebug() {
     `game=${game?.status ?? 'null'}  tanks=${tanks.size}  trees=${sceneryGroup.children.length}`,
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
     `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
-    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  trees=${treeTemplates.length}`,
+    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  trees=${treeTemplates.length}  placed=${sceneryGroup.children.length}`,
   ].join('\n');
 }
 

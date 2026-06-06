@@ -79,7 +79,7 @@ function loadGltf(url) {
 }
 
 const modelsReady = Promise.all([
-  loadGltf('/ar/models/tank/scene.gltf').then(g  => { tankGltfScene  = g.scene; })
+  loadGltf('/ar/models/tank/scene.glb').then(g  => { tankGltfScene  = g.scene; })
     .catch(e => console.warn('Tank model failed',  e)),
   loadGltf('/ar/models/pine/scene.gltf').then(g  => { pineGltfScene  = g.scene; })
     .catch(e => console.warn('Pine model failed',  e)),
@@ -299,18 +299,17 @@ function loadAvatar(url) {
   });
 }
 
-function buildTankGltf(colorHex) {
+function buildTankGltf() {
+  const TANK_H = 0.065; // target height in logical units
   const model = tankGltfScene.clone(true);
 
-  // Measure real world-space size (includes Sketchfab wrapper rotations + Base.014 scale=100)
+  // Scale to target height based on largest world-space dimension
   const box = new THREE.Box3().setFromObject(model);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const maxFootprint = Math.max(size.x, size.z) || 1;
-  const scaleFactor  = 0.13 / maxFootprint;
-  model.scale.setScalar(scaleFactor);
+  const size = box.getSize(new THREE.Vector3());
+  const sf = TANK_H / (Math.max(size.x, size.y, size.z) || 1);
+  model.scale.setScalar(sf);
 
-  // Re-measure after scaling, then center footprint at group origin and sit bottom at Y=0
+  // Re-measure after scaling: center XZ footprint and sit bottom at Y=0
   const box2 = new THREE.Box3().setFromObject(model);
   model.position.set(
     -(box2.min.x + box2.max.x) / 2,
@@ -318,26 +317,13 @@ function buildTankGltf(colorHex) {
     -(box2.min.z + box2.max.z) / 2
   );
 
-  // Tint player-coloured parts (skip near-black materials)
-  const playerColor = new THREE.Color(colorHex);
-  model.traverse(child => {
-    if (!child.isMesh) return;
-    const mats = Array.isArray(child.material) ? child.material : [child.material];
-    child.material = mats.map(m => {
-      const clone = m.clone();
-      const lum = clone.color.r * 0.299 + clone.color.g * 0.587 + clone.color.b * 0.114;
-      if (lum > 0.15) clone.color.lerp(playerColor, 0.5);
-      return clone;
-    });
-    if (!Array.isArray(child.material)) child.material = child.material[0];
-  });
-
-  const turretNode = model.getObjectByName('Turret.014') || null;
-  const canonNode  = model.getObjectByName('Canon.014')  || null;
-
   const group = new THREE.Group();
   group.add(model);
-  return { group, turretNode, canonNode };
+
+  // Tank_Turret is a named direct child in the Quaternius model
+  const turretGroup = model.getObjectByName('Tank_Turret') || group;
+
+  return { group, turretGroup };
 }
 
 function buildTankGeometric(colorHex) {
@@ -364,8 +350,9 @@ function buildTankGeometric(colorHex) {
 async function addTank(player, index) {
   const colorHex = TANK_COLORS[index % TANK_COLORS.length];
 
-  // Use reliable geometric tank (GLTF placement still unreliable with Sketchfab hierarchy)
-  const { group, turretGroup } = buildTankGeometric(colorHex);
+  const { group, turretGroup } = tankGltfScene
+    ? buildTankGltf()
+    : buildTankGeometric(colorHex);
 
   // Bright floating disc so the tank position is unmissable regardless of camera angle
   const discMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });

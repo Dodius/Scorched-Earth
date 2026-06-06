@@ -13,7 +13,7 @@ body {
   display: none !important;
 }
 
-/* AR.js injects the camera video — keep it full-screen */
+/* Camera video — full-screen behind everything */
 video {
   position: fixed !important;
   top: 0 !important;
@@ -21,21 +21,23 @@ video {
   width: 100vw !important;
   height: 100vh !important;
   object-fit: cover !important;
+  z-index: 0 !important;
+  display: block !important;
 }
 
-/* Three.js renderer canvas — transparent overlay on top of camera feed */
-body > canvas {
+/* Three.js renderer canvas — transparent overlay above video */
+#arCanvas {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
   background: transparent !important;
-  z-index: 1;
+  z-index: 1 !important;
 }
 
-.a-enter-vr,
-.a-enter-ar {
+/* Hide any internal canvases AR.js might add (detection processing) */
+canvas:not(#arCanvas) {
   display: none !important;
 }
 

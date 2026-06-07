@@ -76,31 +76,34 @@ export function computeLeapFrogTrajectory(origin, azimuth, elevation, power, opt
 }
 
 export function detectHit(waypoints, players, firingPlayerId, hitRadius = 0.065) {
+  const blastRadius = hitRadius * 3; // outer splash zone
   const livingTargets = players.filter((player) => player.alive !== false && player.id !== firingPlayerId);
+  let closest = null;
 
   for (const point of waypoints) {
     if (point.y > 0.13) continue;
-
     for (const target of livingTargets) {
       if (!target.position) continue;
       const dx = point.x - target.position.x;
       const dz = point.z - target.position.z;
-      const distance = Math.sqrt(dx * dx + dz * dz);
-
-      if (distance <= hitRadius) {
-        return {
-          hit: true,
-          targetId: target.id,
-          impactPoint: { x: point.x, y: 0.02, z: point.z }
-        };
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist <= blastRadius && (closest === null || dist < closest.dist)) {
+        closest = { target, dist, point };
       }
     }
   }
 
+  if (closest) {
+    const r = closest.dist / hitRadius; // 0=bull's-eye, 1=edge of direct hit, 3=edge of blast
+    const damage = r <= 1 ? 3 : r <= 2 ? 2 : 1;
+    return {
+      hit: true,
+      targetId: closest.target.id,
+      damage,
+      impactPoint: { x: closest.point.x, y: 0.02, z: closest.point.z }
+    };
+  }
+
   const lastPoint = waypoints[waypoints.length - 1];
-  return {
-    hit: false,
-    targetId: null,
-    impactPoint: { x: lastPoint.x, y: 0.02, z: lastPoint.z }
-  };
+  return { hit: false, targetId: null, damage: 0, impactPoint: { x: lastPoint.x, y: 0.02, z: lastPoint.z } };
 }

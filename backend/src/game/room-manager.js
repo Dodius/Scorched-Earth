@@ -131,6 +131,7 @@ export function joinGame(gameId, player) {
     username: player.username,
     avatarUrl,
     alive: true,
+    lives: 3,
     azimuth: 0,
     tankIndex: game.players.length
   };
@@ -163,6 +164,7 @@ export function startGame(gameId) {
   game.startedAt = game.startedAt || new Date().toISOString();
   game.players.forEach((player) => {
     player.alive = true;
+    player.lives = 3;
   });
   assignPositions(game);
   game.currentTurn = game.players[0].id;
@@ -181,6 +183,7 @@ export function resetGame(gameId) {
   game.winnerId = null;
   game.players.forEach((player) => {
     player.alive = true;
+    player.lives = 3;
     player.azimuth = 0;
   });
   assignPositions(game);
@@ -197,10 +200,11 @@ export function setTankAzimuth(gameId, playerId, azimuth) {
   return publicGame(game);
 }
 
-export function eliminatePlayer(game, playerId) {
+export function eliminatePlayer(game, playerId, damage = 1) {
   const player = game.players.find((item) => item.id === playerId);
   if (player) {
-    player.alive = false;
+    player.lives = Math.max(0, (player.lives ?? 1) - damage);
+    if (player.lives === 0) player.alive = false;
   }
 }
 

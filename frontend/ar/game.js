@@ -6,7 +6,7 @@ import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 // Physical AR scale relative to the marker: 1=fits inside card, 2=twice marker, 4=four times
 const FIELD_SCALES      = { small: 1, medium: 2, large: 4 };
 const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x80cbc4];
-const SHOT_STEP_MS      = 60;   // ms per waypoint — controls bullet speed
+const SHOT_STEP_MS      = 90;   // ms per waypoint — controls bullet speed
 const PARTICLE_COUNT    = 60;
 const TURN_TIMEOUT_SECS = 30;
 // Game-world dimensions for medium field (logical unit = FIELD_M_W metres)
@@ -22,6 +22,7 @@ const focusReticle   = document.getElementById('focusReticle');
 const controls       = document.getElementById('controls');
 const waitingOverlay = document.getElementById('waitingOverlay');
 const gameOverEl     = document.getElementById('gameOver');
+const livesPanel     = document.getElementById('livesPanel');
 const debugPanel     = document.getElementById('debugPanel');
 const rotateLeft     = document.getElementById('rotateLeft');
 const rotateRight    = document.getElementById('rotateRight');
@@ -360,26 +361,24 @@ function populateScenery() {
     placeTree(birchGltfScene, lx, lz, BIRCH_H, `Birch ${mx}m,${mz}m`);
   }
 
-  // Scale-reference labels floating above terrain
-  const fieldLabel = makeLabelSprite(`${FIELD_M_W}m × ${FIELD_M_D}m  (medium field)`,
-    { textColor: '#89e163', fontSize: 34 });
-  fieldLabel.position.set(0, 0.12, 0);
-  sceneryGroup.add(fieldLabel);
-
-  // X-axis ruler ticks: -200, 0, +200
-  for (const mx of [-200, 0, 200]) {
-    const [lx] = metersToLu(mx, 0);
-    const sp = makeLabelSprite(`${mx > 0 ? '+' : ''}${mx}m`, { textColor: '#f5bf52', fontSize: 28 });
-    sp.position.set(lx, getTerrainY(lx, 0) + 0.035, 0);
-    sceneryGroup.add(sp);
-  }
-
-  // Z-axis ruler ticks: -150, +150
-  for (const mz of [-150, 150]) {
-    const [, lz] = metersToLu(0, mz);
-    const sp = makeLabelSprite(`${mz > 0 ? '+' : ''}${mz}m`, { textColor: '#f5bf52', fontSize: 28 });
-    sp.position.set(0, getTerrainY(0, lz) + 0.035, lz);
-    sceneryGroup.add(sp);
+  // Scale-reference labels — hidden for production, re-enable by setting true
+  if (false) { // eslint-disable-line no-constant-condition
+    const fieldLabel = makeLabelSprite(`${FIELD_M_W}m × ${FIELD_M_D}m  (medium field)`,
+      { textColor: '#89e163', fontSize: 34 });
+    fieldLabel.position.set(0, 0.12, 0);
+    sceneryGroup.add(fieldLabel);
+    for (const mx of [-200, 0, 200]) {
+      const [lx] = metersToLu(mx, 0);
+      const sp = makeLabelSprite(`${mx > 0 ? '+' : ''}${mx}m`, { textColor: '#f5bf52', fontSize: 28 });
+      sp.position.set(lx, getTerrainY(lx, 0) + 0.035, 0);
+      sceneryGroup.add(sp);
+    }
+    for (const mz of [-150, 150]) {
+      const [, lz] = metersToLu(0, mz);
+      const sp = makeLabelSprite(`${mz > 0 ? '+' : ''}${mz}m`, { textColor: '#f5bf52', fontSize: 28 });
+      sp.position.set(0, getTerrainY(0, lz) + 0.035, lz);
+      sceneryGroup.add(sp);
+    }
   }
 }
 
@@ -494,10 +493,26 @@ async function initScene(nextGame) {
   const me = game.players.find((p) => p.id === playerId);
   if (me) setAzimuth(me.azimuth || 0, false);
   updateControls();
+  updateLivesPanel();
 }
 
 // ── HUD helpers ───────────────────────────────────────────────────────────────
 function setHud(msg) { gameStatus.textContent = msg; }
+
+function updateLivesPanel() {
+  if (!game?.players?.length) { livesPanel.innerHTML = ''; return; }
+  const colorHex = (idx) => '#' + TANK_COLORS[idx % TANK_COLORS.length].toString(16).padStart(6, '0');
+  livesPanel.innerHTML = game.players.map((p, i) => {
+    const lives = p.lives ?? (p.alive !== false ? 1 : 0);
+    const hearts = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
+    const dead = p.alive === false;
+    return `<div class="player-life-row${dead ? ' dead' : ''}">` +
+      `<span class="player-life-dot" style="background:${colorHex(i)}"></span>` +
+      `<span>${escapeHtml(p.username)}</span>` +
+      `<span class="player-life-hearts">${hearts}</span>` +
+      `</div>`;
+  }).join('');
+}
 
 function startCountdown() {
   clearInterval(countdownInterval);
@@ -658,7 +673,7 @@ function computeLeapFrogTrajectory(origin, azimuth, elevation, power, options = 
 }
 
 // ── projectile animation ──────────────────────────────────────────────────────
-async function animateProjectile({ waypoints, hit, targetId, impactPoint, launchAt, resultPromise }) {
+async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage, eliminated, livesAfter, launchAt, resultPromise }) {
   animating = true;
   updateControls();
 
@@ -728,13 +743,13 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   battlefieldGroup.remove(trailPts); trailGeo.dispose(); trailMat.dispose();
   battlefieldGroup.remove(sparkPts); sparkGeo.dispose(); sparkMat.dispose();
 
-  // Optimistic path: wait for server's authoritative hit/targetId/impactPoint
+  // Optimistic path: wait for server's authoritative result
   if (resultPromise) {
     const result = await resultPromise;
     if (result) {
       hit = result.hit; targetId = result.targetId; impactPoint = result.impactPoint;
+      damage = result.damage; eliminated = result.eliminated; livesAfter = result.livesAfter;
     } else {
-      // Server rejected the shot — fizzle at the trajectory end
       const last = pts[pts.length - 1];
       impactPoint = { x: last.x, y: 0.02, z: last.z };
       hit = false;
@@ -742,7 +757,14 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   }
 
   spawnExplosion(impactPoint, hit);
-  if (hit && targetId) removeTank(targetId);
+  if (hit && targetId) {
+    if (eliminated) {
+      removeTank(targetId);
+    } else if (livesAfter != null && game?.players) {
+      const p = game.players.find((item) => item.id === targetId);
+      if (p) { p.lives = livesAfter; updateLivesPanel(); }
+    }
+  }
 
   await new Promise(r => setTimeout(r, 650));
   animating = false;
@@ -780,6 +802,7 @@ document.addEventListener('pointerdown', (e) => {
 // ── debug panel ───────────────────────────────────────────────────────────────
 let debugTick = 0;
 function updateDebug() {
+  if (debugPanel.hidden) return;
   if (++debugTick % 30 !== 0) return;
   const pm = camera.projectionMatrix.elements;
   const fx = pm[0].toFixed(2), fy = pm[5].toFixed(2);
@@ -849,11 +872,19 @@ socket.on('turn-timeout', ({ playerId: timedOutId }) => {
 
 socket.on('player-eliminated', ({ playerId: eliminatedId }) => {
   const p = game?.players.find((item) => item.id === eliminatedId);
-  if (p) p.alive = false;
+  if (p) { p.alive = false; p.lives = 0; }
+  removeTank(eliminatedId);
+  updateLivesPanel();
+});
+
+socket.on('player-damaged', ({ playerId: damagedId, livesLeft }) => {
+  const p = game?.players.find((item) => item.id === damagedId);
+  if (p) { p.lives = livesLeft; }
+  updateLivesPanel();
 });
 
 socket.on('game-over', ({ winnerId, game: finalGame }) => {
-  stopCountdown(); game = finalGame || game;
+  stopCountdown(); game = finalGame || game; updateLivesPanel();
   controls.hidden = true; waitingOverlay.hidden = true;
   const winner = game?.players.find((p) => p.id === winnerId);
   gameOverEl.innerHTML = `<div>

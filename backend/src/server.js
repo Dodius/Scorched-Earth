@@ -122,10 +122,18 @@ function launchShot(game, player, { azimuth, elevation, power }) {
   const result = detectHit(waypoints, game.players, player.id);
   const launchAt = Date.now(); // no intentional delay — clients start animation on receive
 
+  // Pre-compute lives after this hit so clients can show it immediately
+  const preTarget = result.hit ? game.players.find((p) => p.id === result.targetId) : null;
+  const livesAfter = preTarget ? Math.max(0, (preTarget.lives ?? 1) - result.damage) : null;
+  const eliminated = livesAfter === 0;
+
   gameNamespace.to(game.id).emit('projectile-launched', {
     waypoints,
     hit: result.hit,
     targetId: result.targetId,
+    damage: result.damage,
+    eliminated,
+    livesAfter,
     impactPoint: result.impactPoint,
     launchAt
   });
@@ -135,8 +143,17 @@ function launchShot(game, player, { azimuth, elevation, power }) {
     if (!currentGame || currentGame.status !== 'playing') return;
 
     if (result.hit) {
-      eliminatePlayer(currentGame, result.targetId);
-      gameNamespace.to(currentGame.id).emit('player-eliminated', { playerId: result.targetId });
+      eliminatePlayer(currentGame, result.targetId, result.damage);
+      const target = currentGame.players.find((p) => p.id === result.targetId);
+      if (target?.alive === false) {
+        gameNamespace.to(currentGame.id).emit('player-eliminated', { playerId: result.targetId });
+      } else if (target) {
+        gameNamespace.to(currentGame.id).emit('player-damaged', {
+          playerId: result.targetId,
+          livesLeft: target.lives,
+          damage: result.damage
+        });
+      }
     }
 
     const winner = result.hit ? endIfWinner(currentGame) : null;
@@ -151,7 +168,7 @@ function launchShot(game, player, { azimuth, elevation, power }) {
     gameNamespace.to(currentGame.id).emit('your-turn', { playerId: nextTurn });
     gameNamespace.to(currentGame.id).emit('game-state', { game: getGame(currentGame.id) });
     scheduleTurnTimeout(currentGame.id);
-  }, Math.max(1600, waypoints.length * 60 + 650));
+  }, Math.max(1600, waypoints.length * 90 + 650));
 }
 
 gameNamespace.on('connection', (socket) => {

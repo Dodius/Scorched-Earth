@@ -574,21 +574,21 @@ function spawnExplosion(point, hit) {
 
 // Lightweight spark burst attached to the bullet trail — 4 free-drifting sparks per waypoint
 function spawnTrailSpark(point) {
-  const COUNT = 4;
+  const COUNT = 10;
   const positions  = new Float32Array(COUNT * 3);
   const velocities = new Float32Array(COUNT * 3);
   for (let i = 0; i < COUNT; i++) {
     positions[i * 3] = point.x; positions[i * 3 + 1] = point.y; positions[i * 3 + 2] = point.z;
-    velocities[i * 3]     = (Math.random() - 0.5) * 0.006;
-    velocities[i * 3 + 1] = Math.random() * 0.007 + 0.001;
-    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.006;
+    velocities[i * 3]     = (Math.random() - 0.5) * 0.012;
+    velocities[i * 3 + 1] = Math.random() * 0.013 + 0.002;
+    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.012;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0xffaa20, size: 0.010, transparent: true, opacity: 1, sizeAttenuation: true });
+  const mat = new THREE.PointsMaterial({ color: 0xffe844, size: 0.028, transparent: true, opacity: 1, sizeAttenuation: true, depthTest: false });
   const pts = new THREE.Points(geo, mat);
   battlefieldGroup.add(pts);
-  activeParticleSystems.push({ pts, geo, mat, ring: null, ringMat: null, velocities, particleCount: COUNT, startTime: performance.now(), duration: 420, done: false });
+  activeParticleSystems.push({ pts, geo, mat, ring: null, ringMat: null, velocities, particleCount: COUNT, startTime: performance.now(), duration: 900, done: false });
 }
 
 function tickParticles() {
@@ -678,7 +678,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   const trailBuf  = new Float32Array(TRAIL_LEN * 3).fill(-9999);
   const trailGeo  = new THREE.BufferGeometry();
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailBuf, 3));
-  const trailMat  = new THREE.PointsMaterial({ color: 0xffd580, size: 0.011, transparent: true, opacity: 0.7, sizeAttenuation: true });
+  const trailMat  = new THREE.PointsMaterial({ color: 0xffe844, size: 0.022, transparent: true, opacity: 0.92, sizeAttenuation: true, depthTest: false });
   const trailPts  = new THREE.Points(trailGeo, trailMat);
   battlefieldGroup.add(trailPts);
 
@@ -687,7 +687,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   const sparkBuf  = new Float32Array(SPARK_LEN * 3).fill(-9999);
   const sparkGeo  = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkBuf, 3));
-  const sparkMat  = new THREE.PointsMaterial({ color: 0xff7010, size: 0.014, transparent: true, opacity: 0.95, sizeAttenuation: true });
+  const sparkMat  = new THREE.PointsMaterial({ color: 0xff7010, size: 0.026, transparent: true, opacity: 0.98, sizeAttenuation: true, depthTest: false });
   const sparkPts  = new THREE.Points(sparkGeo, sparkMat);
   battlefieldGroup.add(sparkPts);
 
@@ -712,9 +712,9 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     const recentCount = Math.min(SPARK_LEN >> 1, drawn);
     for (let i = 0; i < SPARK_LEN; i++) {
       const src = trailHistory[Math.min(i >> 1, recentCount - 1)];
-      sparkBuf[i * 3]     = src.x + (Math.random() - 0.5) * 0.014;
-      sparkBuf[i * 3 + 1] = src.y + (Math.random() - 0.5) * 0.014;
-      sparkBuf[i * 3 + 2] = src.z + (Math.random() - 0.5) * 0.014;
+      sparkBuf[i * 3]     = src.x + (Math.random() - 0.5) * 0.022;
+      sparkBuf[i * 3 + 1] = src.y + (Math.random() - 0.5) * 0.022;
+      sparkBuf[i * 3 + 2] = src.z + (Math.random() - 0.5) * 0.022;
     }
     sparkGeo.attributes.position.needsUpdate = true;
     sparkGeo.setDrawRange(0, Math.min(SPARK_LEN, drawn * 2));

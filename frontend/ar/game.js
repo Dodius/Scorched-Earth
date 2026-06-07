@@ -673,12 +673,9 @@ function computeLeapFrogTrajectory(origin, azimuth, elevation, power, options = 
 }
 
 // ── projectile animation ──────────────────────────────────────────────────────
-async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage, eliminated, livesAfter, launchAt, resultPromise }) {
+async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage, eliminated, livesAfter, resultPromise }) {
   animating = true;
   updateControls();
-
-  // Non-optimistic path (other players' shots): respect server timestamp
-  if (launchAt != null) await new Promise(r => setTimeout(r, Math.max(0, launchAt - Date.now())));
 
   const pts = waypoints.map(wp => new THREE.Vector3(wp.x, wp.y, wp.z));
 

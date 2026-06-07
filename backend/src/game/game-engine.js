@@ -1,11 +1,5 @@
 const DEG_TO_RAD = Math.PI / 180;
 
-export const FIELD_SCALES = {
-  small: 0.75,
-  medium: 1,
-  large: 1.25
-};
-
 export function getTankPosition(index, count) {
   const base = (Math.PI * 2 * index) / Math.max(count, 1) - Math.PI / 2;
   const jitter = (Math.random() - 0.5) * (Math.PI / 9); // ±20°
@@ -29,7 +23,7 @@ export function getTankPositions(players) {
 }
 
 export function computeTrajectory(origin, azimuth, elevation, power, options = {}) {
-  const steps = options.steps || 72;
+  const steps = options.steps || 36;
   const duration = options.duration || 3;
   const gravity = options.gravity || 1.65;
   const speed = 0.45 + (Number(power) / 100) * 0.95;
@@ -63,19 +57,19 @@ export function computeLeapFrogTrajectory(origin, azimuth, elevation, power, opt
   const first = computeTrajectory(origin, azimuth, elevation, power, {
     ...options,
     duration: 2.1,
-    steps: 46
+    steps: 23
   });
   const landing = first[first.length - 1];
   const second = computeTrajectory(landing, azimuth, Math.max(20, elevation * 0.45), power * 0.55, {
     ...options,
     duration: 1.35,
-    steps: 30
+    steps: 15
   });
   const thirdOrigin = second[second.length - 1];
   const third = computeTrajectory(thirdOrigin, azimuth, 18, power * 0.32, {
     ...options,
     duration: 0.85,
-    steps: 20
+    steps: 10
   });
 
   return [...first, ...second.slice(1), ...third.slice(1)];

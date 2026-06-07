@@ -6,7 +6,7 @@ import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 // Physical AR scale relative to the marker: 1=fits inside card, 2=twice marker, 4=four times
 const FIELD_SCALES      = { small: 1, medium: 2, large: 4 };
 const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x80cbc4];
-const TRAIL_LENGTH      = 10;
+const SHOT_STEP_MS      = 60;   // ms per waypoint — controls bullet speed
 const PARTICLE_COUNT    = 60;
 const TURN_TIMEOUT_SECS = 30;
 // Game-world dimensions for medium field (logical unit = FIELD_M_W metres)
@@ -45,8 +45,9 @@ const tanks     = new Map();
 let game        = null;
 let myAzimuth   = 0;
 let currentTurn = null;
-let animating   = false;
-let fieldScale  = 1;
+let animating        = false;
+let resolveOwnShot   = null;  // set when firing optimistically, resolved by server result
+let fieldScale       = 1;
 let countdownInterval = null;
 let focusReticleTimer = null;
 
@@ -67,14 +68,22 @@ dirLight.position.set(1, 2, 1);
 scene.add(dirLight);
 
 // ── Hide AR.js processing canvases ───────────────────────────────────────────
-// AR.js repositions its internal canvases during frame updates, briefly
-// overriding CSS. Inline style applied immediately via MutationObserver wins.
+// AR.js repositions its internal canvases via JS every frame, which briefly
+// overrides CSS. Stamping inline cssText on insertion wins the first race.
+// A per-canvas attribute observer then re-stamps on every subsequent style
+// mutation (e.g. during projectile animation when AR.js is most active).
+const HIDE_CSS = 'position:fixed!important;top:-9999px!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
+
+function lockHide(canvas) {
+  canvas.style.cssText = HIDE_CSS;
+  new MutationObserver(() => { canvas.style.cssText = HIDE_CSS; })
+    .observe(canvas, { attributes: true, attributeFilter: ['style'] });
+}
+
 new MutationObserver(mutations => {
   for (const m of mutations) {
     for (const node of m.addedNodes) {
-      if (node.nodeType === 1 && node.tagName === 'CANVAS' && node.id !== 'arCanvas') {
-        node.style.cssText = 'position:fixed!important;top:-9999px!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
-      }
+      if (node.nodeType === 1 && node.tagName === 'CANVAS' && node.id !== 'arCanvas') lockHide(node);
     }
   }
 }).observe(document.body, { childList: true, subtree: true });
@@ -316,27 +325,27 @@ function buildTankGltf() {
   const TANK_H = 0.12;
   const model = tankGltfScene.clone(true);
 
-  // Cloned objects aren't in a scene, so world matrices aren't auto-propagated.
-  // Must call this before Box3 or it only sees raw geometry without child scales.
+  // Cloned objects aren't in a scene so world matrices aren't auto-propagated.
+  // Must call this before Box3 or it only sees raw geometry ignoring child scales.
   model.updateMatrixWorld(true);
 
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const sf = TANK_H / (Math.max(size.x, size.y, size.z) || 1);
   const center = box.getCenter(new THREE.Vector3());
-  window._tankBboxDbg = `${size.x.toFixed(3)}×${size.y.toFixed(3)}×${size.z.toFixed(3)} sf=${sf.toFixed(4)}`;
 
-  // Set scale then position in one step using pre-scale box values.
-  // After scale sf: original world point P maps to group point P*sf.
-  // So to center XZ and sit bottom at 0: position = (-center.x*sf, -min.y*sf, -center.z*sf).
+  // After scale sf: original world point P maps to P*sf.
+  // Center XZ and sit bottom at y=0: position = (-center.x*sf, -min.y*sf, -center.z*sf)
   model.scale.setScalar(sf);
   model.position.set(-center.x * sf, -box.min.y * sf, -center.z * sf);
 
   const group = new THREE.Group();
   group.add(model);
 
-  const turretGroup = model.getObjectByName('Tank_Turret') || group;
-  return { group, turretGroup };
+  // Rotate the wrapper group so rotation.y always aligns with the world Y axis.
+  // Using the GLTF Tank_Turret node directly causes nose-tilt because that node's
+  // local axes may differ from world axes.
+  return { group, turretGroup: group };
 }
 
 function buildTankGeometric(colorHex) {
@@ -368,8 +377,9 @@ async function addTank(player, index) {
     : buildTankGeometric(colorHex);
 
   // Bright floating disc so the tank position is unmissable regardless of camera angle
+  const discGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.004, 16);
   const discMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.004, 16), discMat);
+  const disc = new THREE.Mesh(discGeo, discMat);
   disc.position.y = 0.09;
   group.add(disc);
 
@@ -377,10 +387,12 @@ async function addTank(player, index) {
   group.position.set(player.position.x, ty, player.position.z);
   turretGroup.rotation.y = THREE.MathUtils.degToRad(player.azimuth || 0);
 
+  let avatarMat = null;
   if (player.avatarUrl) {
     const tex = await loadAvatar(player.avatarUrl);
     if (tex) {
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      avatarMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(avatarMat);
       sprite.scale.set(0.08, 0.08, 1);
       sprite.position.set(0, 0.16, 0);
       group.add(sprite);
@@ -388,18 +400,26 @@ async function addTank(player, index) {
   }
 
   battlefieldGroup.add(group);
-  tanks.set(player.id, { group, turretGroup });
+  tanks.set(player.id, { group, turretGroup, discGeo, discMat, avatarMat });
 }
 
 function removeTank(id) {
   const t = tanks.get(id);
   if (!t) return;
   battlefieldGroup.remove(t.group);
+  t.discGeo.dispose();
+  t.discMat.dispose();
+  t.avatarMat?.dispose();
   tanks.delete(id);
 }
 
 function clearBattlefield() {
   [...tanks.keys()].forEach(removeTank);
+  // Dispose textures/materials we own (label sprites). GLTF clones share geometries
+  // with the source scene so those must not be disposed here.
+  sceneryGroup.traverse(node => {
+    if (node.isSprite) { node.material?.map?.dispose(); node.material?.dispose(); }
+  });
   while (sceneryGroup.children.length) sceneryGroup.remove(sceneryGroup.children[0]);
 }
 
@@ -534,48 +554,124 @@ function tickParticles() {
   }
 }
 
+// ── trajectory math (mirrors backend game-engine.js exactly) ─────────────────
+// Used for optimistic client-side fire: start animating immediately on button
+// press without waiting for the server round-trip.
+const DEG_TO_RAD_C = Math.PI / 180;
+
+function computeTrajectory(origin, azimuth, elevation, power, options = {}) {
+  const steps    = options.steps    || 36;
+  const duration = options.duration || 3;
+  const gravity  = options.gravity  || 1.65;
+  const speed    = 0.45 + (Number(power) / 100) * 0.95;
+  const azRad    = Number(azimuth)   * DEG_TO_RAD_C;
+  const elRad    = Number(elevation) * DEG_TO_RAD_C;
+  const hSpeed   = Math.cos(elRad) * speed;
+  const vSpeed   = Math.sin(elRad) * speed;
+  const dirX     = -Math.sin(azRad);
+  const dirZ     = -Math.cos(azRad);
+  const pts      = [];
+  for (let i = 0; i < steps; i++) {
+    const t = (duration * i) / (steps - 1);
+    const y = origin.y + vSpeed * t - 0.5 * gravity * t * t;
+    pts.push({ x: origin.x + dirX * hSpeed * t, y: Math.max(0.018, y), z: origin.z + dirZ * hSpeed * t });
+    if (i > 8 && y <= 0.018) break;
+  }
+  return pts;
+}
+
+function computeLeapFrogTrajectory(origin, azimuth, elevation, power, options = {}) {
+  const first  = computeTrajectory(origin, azimuth, elevation, power, { ...options, duration: 2.1,  steps: 23 });
+  const second = computeTrajectory(first[first.length - 1], azimuth, Math.max(20, elevation * 0.45), power * 0.55, { ...options, duration: 1.35, steps: 15 });
+  const third  = computeTrajectory(second[second.length - 1], azimuth, 18, power * 0.32, { ...options, duration: 0.85, steps: 10 });
+  return [...first, ...second.slice(1), ...third.slice(1)];
+}
+
 // ── projectile animation ──────────────────────────────────────────────────────
-async function animateProjectile({ waypoints, hit, targetId, impactPoint, launchAt }) {
+async function animateProjectile({ waypoints, hit, targetId, impactPoint, launchAt, resultPromise }) {
   animating = true;
   updateControls();
-  await new Promise((r) => setTimeout(r, Math.max(0, launchAt - Date.now())));
 
-  const pts = waypoints.map((wp) => new THREE.Vector3(wp.x, wp.y, wp.z));
+  // Non-optimistic path (other players' shots): respect server timestamp
+  if (launchAt != null) await new Promise(r => setTimeout(r, Math.max(0, launchAt - Date.now())));
 
-  const projGeo = new THREE.SphereGeometry(0.016, 8, 8);
-  const projMat = new THREE.MeshStandardMaterial({ color: 0xffe35d, emissive: 0xff9f28, emissiveIntensity: 1.5 });
-  const proj = new THREE.Mesh(projGeo, projMat);
+  const pts = waypoints.map(wp => new THREE.Vector3(wp.x, wp.y, wp.z));
+
+  // Bullet
+  const projGeo = new THREE.SphereGeometry(0.02, 8, 8);
+  const projMat = new THREE.MeshStandardMaterial({ color: 0xffe35d, emissive: 0xff9f28, emissiveIntensity: 2.0 });
+  const proj    = new THREE.Mesh(projGeo, projMat);
   battlefieldGroup.add(proj);
 
-  const trailGeos = [], trailMats = [], trailMeshes = [], trailHistory = [];
-  for (let i = 0; i < TRAIL_LENGTH; i++) {
-    const tg = new THREE.SphereGeometry(0.009 * (1 - i / TRAIL_LENGTH), 5, 5);
-    const tm = new THREE.MeshBasicMaterial({ color: 0xffd580, transparent: true, opacity: (1 - i / TRAIL_LENGTH) * 0.6 });
-    const m  = new THREE.Mesh(tg, tm);
-    m.visible = false;
-    battlefieldGroup.add(m);
-    trailGeos.push(tg); trailMats.push(tm); trailMeshes.push(m);
-  }
+  // Comet tail — single Line through the last N bullet positions (one draw call)
+  const TRAIL_LEN = 20;
+  const trailBuf  = new Float32Array(TRAIL_LEN * 3);
+  const trailGeo  = new THREE.BufferGeometry();
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailBuf, 3));
+  const trailMat  = new THREE.LineBasicMaterial({ color: 0xffd580, transparent: true, opacity: 0.75 });
+  const trailLine = new THREE.Line(trailGeo, trailMat);
+  battlefieldGroup.add(trailLine);
+
+  // Spark cloud — Points with jitter around the last few bullet positions
+  const SPARK_LEN = 7;
+  const sparkBuf  = new Float32Array(SPARK_LEN * 3).fill(-9999);
+  const sparkGeo  = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkBuf, 3));
+  const sparkMat  = new THREE.PointsMaterial({ color: 0xff9940, size: 0.008, transparent: true, opacity: 0.9, sizeAttenuation: true });
+  const sparkPts  = new THREE.Points(sparkGeo, sparkMat);
+  battlefieldGroup.add(sparkPts);
+
+  const trailHistory = [];
 
   for (const wp of pts) {
     proj.position.copy(wp);
     trailHistory.unshift(wp.clone());
-    if (trailHistory.length > TRAIL_LENGTH) trailHistory.pop();
-    trailMeshes.forEach((m, i) => {
-      if (trailHistory[i]) { m.position.copy(trailHistory[i]); m.visible = true; }
-      else m.visible = false;
-    });
-    await new Promise((r) => setTimeout(r, 45));
+    if (trailHistory.length > TRAIL_LEN) trailHistory.pop();
+
+    // Update trail line
+    const drawn = trailHistory.length;
+    for (let i = 0; i < drawn; i++) {
+      trailBuf[i * 3]     = trailHistory[i].x;
+      trailBuf[i * 3 + 1] = trailHistory[i].y;
+      trailBuf[i * 3 + 2] = trailHistory[i].z;
+    }
+    trailGeo.attributes.position.needsUpdate = true;
+    trailGeo.setDrawRange(0, drawn);
+
+    // Update sparks with small random offset from recent positions
+    const sparks = Math.min(SPARK_LEN, drawn);
+    for (let i = 0; i < sparks; i++) {
+      sparkBuf[i * 3]     = trailHistory[i].x + (Math.random() - 0.5) * 0.007;
+      sparkBuf[i * 3 + 1] = trailHistory[i].y + (Math.random() - 0.5) * 0.007;
+      sparkBuf[i * 3 + 2] = trailHistory[i].z + (Math.random() - 0.5) * 0.007;
+    }
+    sparkGeo.attributes.position.needsUpdate = true;
+    sparkGeo.setDrawRange(0, sparks);
+
+    await new Promise(r => setTimeout(r, SHOT_STEP_MS));
   }
 
-  battlefieldGroup.remove(proj); projGeo.dispose(); projMat.dispose();
-  trailMeshes.forEach((m) => battlefieldGroup.remove(m));
-  trailGeos.forEach((g) => g.dispose()); trailMats.forEach((m) => m.dispose());
+  battlefieldGroup.remove(proj);      projGeo.dispose();  projMat.dispose();
+  battlefieldGroup.remove(trailLine); trailGeo.dispose(); trailMat.dispose();
+  battlefieldGroup.remove(sparkPts);  sparkGeo.dispose(); sparkMat.dispose();
+
+  // Optimistic path: wait for server's authoritative hit/targetId/impactPoint
+  if (resultPromise) {
+    const result = await resultPromise;
+    if (result) {
+      hit = result.hit; targetId = result.targetId; impactPoint = result.impactPoint;
+    } else {
+      // Server rejected the shot — fizzle at the trajectory end
+      const last = pts[pts.length - 1];
+      impactPoint = { x: last.x, y: 0.02, z: last.z };
+      hit = false;
+    }
+  }
 
   spawnExplosion(impactPoint, hit);
   if (hit && targetId) removeTank(targetId);
 
-  await new Promise((r) => setTimeout(r, 650));
+  await new Promise(r => setTimeout(r, 650));
   animating = false;
   updateControls();
 }
@@ -622,7 +718,6 @@ function updateDebug() {
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
     `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
     `models: tank=${tankGltfScene ? 'ok' : 'miss'}  pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}`,
-    `tank bbox: ${window._tankBboxDbg || 'n/a'}`,
   ].join('\n');
 }
 
@@ -658,7 +753,17 @@ socket.on('tank-rotated', ({ playerId: rotatedId, azimuth }) => {
   if (rotatedId === playerId) { myAzimuth = azimuth; azimuthValue.textContent = `${Math.round(myAzimuth)} deg`; }
 });
 
-socket.on('projectile-launched', (payload) => { stopCountdown(); animateProjectile(payload); });
+socket.on('projectile-launched', (payload) => {
+  stopCountdown();
+  if (resolveOwnShot) {
+    // Own shot: animation already running — feed server result into it
+    resolveOwnShot(payload);
+    resolveOwnShot = null;
+  } else {
+    // Another player's shot: animate from scratch with full server payload
+    animateProjectile(payload);
+  }
+});
 
 socket.on('turn-timeout', ({ playerId: timedOutId }) => {
   const p = game?.players.find((item) => item.id === timedOutId);
@@ -694,9 +799,24 @@ rotateRight.addEventListener('click', () => setAzimuth(myAzimuth + 5));
 elevationInput.addEventListener('input', () => { elevationValue.textContent = `${elevationInput.value} deg`; });
 powerInput.addEventListener('input',     () => { powerValue.textContent = `${powerInput.value}%`; });
 fireButton.addEventListener('click', () => {
+  const me = game?.players.find(p => p.id === playerId);
+  if (!me?.position) return;
   fireButton.disabled = true;
-  socket.emit('fire',
-    { gameId, playerId, azimuth: myAzimuth, elevation: Number(elevationInput.value), power: Number(powerInput.value) },
-    () => { fireButton.disabled = false; }
+
+  const az = myAzimuth;
+  const el = Number(elevationInput.value);
+  const pw = Number(powerInput.value);
+
+  // Compute trajectory locally and start animation immediately — no round-trip wait
+  const trajectoryFn = game.config?.bombMode === 'leap-frog' ? computeLeapFrogTrajectory : computeTrajectory;
+  const waypoints    = trajectoryFn({ ...me.position, y: 0.07 }, az, el, pw);
+  const resultPromise = new Promise(r => { resolveOwnShot = r; });
+  animateProjectile({ waypoints, resultPromise });
+
+  socket.emit('fire', { gameId, playerId, azimuth: az, elevation: el, power: pw },
+    (res) => {
+      fireButton.disabled = false;
+      if (!res?.ok) { resolveOwnShot?.(null); resolveOwnShot = null; }
+    }
   );
 });

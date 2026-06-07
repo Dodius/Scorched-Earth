@@ -151,7 +151,7 @@ function launchShot(game, player, { azimuth, elevation, power }) {
     gameNamespace.to(currentGame.id).emit('your-turn', { playerId: nextTurn });
     gameNamespace.to(currentGame.id).emit('game-state', { game: getGame(currentGame.id) });
     scheduleTurnTimeout(currentGame.id);
-  }, Math.max(1600, waypoints.length * 45 + 650));
+  }, Math.max(1600, waypoints.length * 60 + 650));
 }
 
 gameNamespace.on('connection', (socket) => {

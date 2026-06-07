@@ -45,7 +45,7 @@ function assignPositions(game) {
   game.players = getTankPositions(game.players);
   game.players.forEach((player) => {
     if (game.status === 'lobby' || player.azimuth == null) {
-      player.azimuth = ((Math.atan2(-player.position.x, player.position.z) * 180) / Math.PI + 360) % 360;
+      player.azimuth = ((Math.atan2(player.position.x, player.position.z) * 180) / Math.PI + 360) % 360;
     }
   });
 }

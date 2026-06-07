@@ -74,8 +74,13 @@ scene.add(dirLight);
 // mutation (e.g. during projectile animation when AR.js is most active).
 const HIDE_CSS = 'position:fixed!important;top:-9999px!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;';
 
+// All AR.js processing canvases we have hidden, re-stamped every render frame.
+const hiddenCanvases = new Set();
+
 function lockHide(canvas) {
   canvas.style.cssText = HIDE_CSS;
+  hiddenCanvases.add(canvas);
+  // Attribute observer catches async style changes outside the rAF window.
   new MutationObserver(() => { canvas.style.cssText = HIDE_CSS; })
     .observe(canvas, { attributes: true, attributeFilter: ['style'] });
 }
@@ -338,6 +343,9 @@ function buildTankGltf() {
   // Center XZ and sit bottom at y=0: position = (-center.x*sf, -min.y*sf, -center.z*sf)
   model.scale.setScalar(sf);
   model.position.set(-center.x * sf, -box.min.y * sf, -center.z * sf);
+  // Quaternius tank gun points toward +X in model space; trajectory azimuth=0° fires
+  // toward -Z. Rotating +90° around Y maps +X → -Z, aligning visual facing with trajectory.
+  model.rotation.y = Math.PI / 2;
 
   const group = new THREE.Group();
   group.add(model);
@@ -603,21 +611,21 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   const proj    = new THREE.Mesh(projGeo, projMat);
   battlefieldGroup.add(proj);
 
-  // Comet tail — single Line through the last N bullet positions (one draw call)
-  const TRAIL_LEN = 20;
-  const trailBuf  = new Float32Array(TRAIL_LEN * 3);
+  // Comet tail — Points at each past position (Line is always 1px in WebGL, useless in AR)
+  const TRAIL_LEN = 22;
+  const trailBuf  = new Float32Array(TRAIL_LEN * 3).fill(-9999);
   const trailGeo  = new THREE.BufferGeometry();
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailBuf, 3));
-  const trailMat  = new THREE.LineBasicMaterial({ color: 0xffd580, transparent: true, opacity: 0.75 });
-  const trailLine = new THREE.Line(trailGeo, trailMat);
-  battlefieldGroup.add(trailLine);
+  const trailMat  = new THREE.PointsMaterial({ color: 0xffd580, size: 0.011, transparent: true, opacity: 0.7, sizeAttenuation: true });
+  const trailPts  = new THREE.Points(trailGeo, trailMat);
+  battlefieldGroup.add(trailPts);
 
-  // Spark cloud — Points with jitter around the last few bullet positions
-  const SPARK_LEN = 7;
+  // Hot spark cloud — more numerous, bigger, wider jitter, orange colour
+  const SPARK_LEN = 14;
   const sparkBuf  = new Float32Array(SPARK_LEN * 3).fill(-9999);
   const sparkGeo  = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkBuf, 3));
-  const sparkMat  = new THREE.PointsMaterial({ color: 0xff9940, size: 0.008, transparent: true, opacity: 0.9, sizeAttenuation: true });
+  const sparkMat  = new THREE.PointsMaterial({ color: 0xff7010, size: 0.014, transparent: true, opacity: 0.95, sizeAttenuation: true });
   const sparkPts  = new THREE.Points(sparkGeo, sparkMat);
   battlefieldGroup.add(sparkPts);
 
@@ -628,7 +636,7 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     trailHistory.unshift(wp.clone());
     if (trailHistory.length > TRAIL_LEN) trailHistory.pop();
 
-    // Update trail line
+    // Update trail dots
     const drawn = trailHistory.length;
     for (let i = 0; i < drawn; i++) {
       trailBuf[i * 3]     = trailHistory[i].x;
@@ -638,22 +646,23 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     trailGeo.attributes.position.needsUpdate = true;
     trailGeo.setDrawRange(0, drawn);
 
-    // Update sparks with small random offset from recent positions
-    const sparks = Math.min(SPARK_LEN, drawn);
-    for (let i = 0; i < sparks; i++) {
-      sparkBuf[i * 3]     = trailHistory[i].x + (Math.random() - 0.5) * 0.007;
-      sparkBuf[i * 3 + 1] = trailHistory[i].y + (Math.random() - 0.5) * 0.007;
-      sparkBuf[i * 3 + 2] = trailHistory[i].z + (Math.random() - 0.5) * 0.007;
+    // Update sparks — 2 per recent position, spread wider for visible fireworks
+    const recentCount = Math.min(SPARK_LEN >> 1, drawn);
+    for (let i = 0; i < SPARK_LEN; i++) {
+      const src = trailHistory[Math.min(i >> 1, recentCount - 1)];
+      sparkBuf[i * 3]     = src.x + (Math.random() - 0.5) * 0.014;
+      sparkBuf[i * 3 + 1] = src.y + (Math.random() - 0.5) * 0.014;
+      sparkBuf[i * 3 + 2] = src.z + (Math.random() - 0.5) * 0.014;
     }
     sparkGeo.attributes.position.needsUpdate = true;
-    sparkGeo.setDrawRange(0, sparks);
+    sparkGeo.setDrawRange(0, Math.min(SPARK_LEN, drawn * 2));
 
     await new Promise(r => setTimeout(r, SHOT_STEP_MS));
   }
 
-  battlefieldGroup.remove(proj);      projGeo.dispose();  projMat.dispose();
-  battlefieldGroup.remove(trailLine); trailGeo.dispose(); trailMat.dispose();
-  battlefieldGroup.remove(sparkPts);  sparkGeo.dispose(); sparkMat.dispose();
+  battlefieldGroup.remove(proj);     projGeo.dispose();  projMat.dispose();
+  battlefieldGroup.remove(trailPts); trailGeo.dispose(); trailMat.dispose();
+  battlefieldGroup.remove(sparkPts); sparkGeo.dispose(); sparkMat.dispose();
 
   // Optimistic path: wait for server's authoritative hit/targetId/impactPoint
   if (resultPromise) {
@@ -725,6 +734,9 @@ function updateDebug() {
 function render() {
   requestAnimationFrame(render);
   if (arSource$?.ready && arContext) arContext.update(arSource$.domElement);
+  // Re-stamp hidden canvases in the same rAF callback, after arContext.update(),
+  // so AR.js style mutations are overridden before the browser paints this frame.
+  for (const c of hiddenCanvases) c.style.cssText = HIDE_CSS;
   tickParticles();
   updateDebug();
   renderer.render(scene, camera);

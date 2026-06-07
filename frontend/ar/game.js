@@ -165,11 +165,23 @@ pollMarkerVisible();
 const TERRAIN_W = 1.0;
 const TERRAIN_D = 0.75;
 let terrainMesh = null;
+let grassMesh   = null;
 
 function hashSeed(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
   return h;
+}
+
+// Deterministic PRNG (mulberry32) — same seed → same grass/scatter layout on every client
+function seededRandom(seed) {
+  let s = (seed ^ 0x6d2b79f5) >>> 0;
+  return () => {
+    s += 0x6d2b79f5;
+    let t = Math.imul(s ^ (s >>> 15), s | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function sampleHeight(nx, nz, seed) {
@@ -195,6 +207,12 @@ function buildTerrain(seed = 12345) {
     terrainMesh.material.dispose();
     terrainMesh = null;
   }
+  if (grassMesh) {
+    battlefieldGroup.remove(grassMesh);
+    grassMesh.geometry.dispose();
+    grassMesh.material.dispose();
+    grassMesh = null;
+  }
   const geo = new THREE.PlaneGeometry(TERRAIN_W, TERRAIN_D, 40, 30);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -214,6 +232,59 @@ function buildTerrain(seed = 12345) {
   );
   border.position.y = 0.001;
   battlefieldGroup.add(border);
+
+  grassMesh = buildGrass(seed);
+}
+
+// Crossed-quad grass blade: two thin quads at 90° → visible from all angles, one draw call
+function buildGrass(seed) {
+  const BLADE_COUNT = 1000;
+  const BH = 0.020;  // blade height (LU) — about 17% of tank height, knee-high
+  const BW = 0.004;  // blade width
+
+  // Two quads forming an X — quad A in the XY plane, quad B in the ZY plane
+  const pos = new Float32Array([
+    -BW/2, 0,  0,   BW/2, 0,  0,   BW/3, BH,  0,  -BW/3, BH,  0,
+     0,    0, -BW/2, 0,   0, BW/2,  0,  BH, BW/3,   0,   BH, -BW/3,
+  ]);
+  const bladeGeo = new THREE.BufferGeometry();
+  bladeGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  bladeGeo.setIndex([0,1,2, 2,3,0, 4,5,6, 6,7,4]);
+  bladeGeo.computeVertexNormals();
+
+  // White base so instance colours show at full value
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.88, metalness: 0, side: THREE.DoubleSide
+  });
+
+  const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, BLADE_COUNT);
+  mesh.frustumCulled = false;
+
+  const TONES = [
+    new THREE.Color(0x4a9022),
+    new THREE.Color(0x3a7518),
+    new THREE.Color(0x5aaa2c),
+    new THREE.Color(0x427a1c),
+  ];
+
+  const rng   = seededRandom(seed);
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < BLADE_COUNT; i++) {
+    const x  = (rng() - 0.5) * TERRAIN_W * 0.93;
+    const z  = (rng() - 0.5) * TERRAIN_D * 0.93;
+    const ty = sampleHeight(x / TERRAIN_W, z / TERRAIN_D, seed);
+    dummy.position.set(x, ty, z);
+    dummy.rotation.set((rng()-0.5)*0.22, rng()*Math.PI*2, (rng()-0.5)*0.18);
+    dummy.scale.set(0.7 + rng()*0.6, 0.55 + rng()*0.9, 0.7 + rng()*0.6);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setColorAt(i, TONES[Math.floor(rng() * TONES.length)]);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate  = true;
+  battlefieldGroup.add(mesh);
+  return mesh;
 }
 
 buildTerrain();
@@ -498,7 +569,26 @@ function spawnExplosion(point, hit) {
   ring.position.set(point.x, point.y + 0.002, point.z);
   battlefieldGroup.add(ring);
 
-  activeParticleSystems.push({ pts, geo, mat, ring, ringMat, velocities, startTime: performance.now(), duration: 650, done: false });
+  activeParticleSystems.push({ pts, geo, mat, ring, ringMat, velocities, particleCount: PARTICLE_COUNT, startTime: performance.now(), duration: 650, done: false });
+}
+
+// Lightweight spark burst attached to the bullet trail — 4 free-drifting sparks per waypoint
+function spawnTrailSpark(point) {
+  const COUNT = 4;
+  const positions  = new Float32Array(COUNT * 3);
+  const velocities = new Float32Array(COUNT * 3);
+  for (let i = 0; i < COUNT; i++) {
+    positions[i * 3] = point.x; positions[i * 3 + 1] = point.y; positions[i * 3 + 2] = point.z;
+    velocities[i * 3]     = (Math.random() - 0.5) * 0.006;
+    velocities[i * 3 + 1] = Math.random() * 0.007 + 0.001;
+    velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.006;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffaa20, size: 0.010, transparent: true, opacity: 1, sizeAttenuation: true });
+  const pts = new THREE.Points(geo, mat);
+  battlefieldGroup.add(pts);
+  activeParticleSystems.push({ pts, geo, mat, ring: null, ringMat: null, velocities, particleCount: COUNT, startTime: performance.now(), duration: 420, done: false });
 }
 
 function tickParticles() {
@@ -508,12 +598,14 @@ function tickParticles() {
     const t = (now - sys.startTime) / sys.duration;
     if (t >= 1) {
       sys.done = true;
-      battlefieldGroup.remove(sys.pts); battlefieldGroup.remove(sys.ring);
-      sys.geo.dispose(); sys.mat.dispose(); sys.ring.geometry.dispose(); sys.ringMat.dispose();
+      battlefieldGroup.remove(sys.pts);
+      sys.geo.dispose(); sys.mat.dispose();
+      if (sys.ring) { battlefieldGroup.remove(sys.ring); sys.ring.geometry.dispose(); sys.ringMat.dispose(); }
       continue;
     }
     const pos = sys.geo.attributes.position.array;
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const n   = sys.particleCount;
+    for (let i = 0; i < n; i++) {
       pos[i * 3]     += sys.velocities[i * 3];
       pos[i * 3 + 1] += sys.velocities[i * 3 + 1];
       pos[i * 3 + 2] += sys.velocities[i * 3 + 2];
@@ -521,9 +613,14 @@ function tickParticles() {
     }
     sys.pts.geometry.attributes.position.needsUpdate = true;
     sys.mat.opacity = 1 - t;
-    const rs = 1 + t * 12;
-    sys.ring.scale.set(rs, 1, rs);
-    sys.ringMat.opacity = 0.85 * (1 - t);
+    if (sys.ring) {
+      sys.ring.scale.set(1 + t * 12, 1, 1 + t * 12);
+      sys.ringMat.opacity = 0.85 * (1 - t);
+    }
+  }
+  // Purge finished systems so the array doesn't grow indefinitely
+  for (let i = activeParticleSystems.length - 1; i >= 0; i--) {
+    if (activeParticleSystems[i].done) activeParticleSystems.splice(i, 1);
   }
 }
 
@@ -576,8 +673,8 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   const proj    = new THREE.Mesh(projGeo, projMat);
   battlefieldGroup.add(proj);
 
-  // Comet tail — Points at each past position (Line is always 1px in WebGL, useless in AR)
-  const TRAIL_LEN = 22;
+  // Comet tail — Points at each past position
+  const TRAIL_LEN = 28;
   const trailBuf  = new Float32Array(TRAIL_LEN * 3).fill(-9999);
   const trailGeo  = new THREE.BufferGeometry();
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailBuf, 3));
@@ -585,8 +682,8 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
   const trailPts  = new THREE.Points(trailGeo, trailMat);
   battlefieldGroup.add(trailPts);
 
-  // Hot spark cloud — more numerous, bigger, wider jitter, orange colour
-  const SPARK_LEN = 14;
+  // Hot spark cloud — jittered orange dots around the bullet head
+  const SPARK_LEN = 18;
   const sparkBuf  = new Float32Array(SPARK_LEN * 3).fill(-9999);
   const sparkGeo  = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkBuf, 3));
@@ -622,6 +719,8 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, launch
     sparkGeo.attributes.position.needsUpdate = true;
     sparkGeo.setDrawRange(0, Math.min(SPARK_LEN, drawn * 2));
 
+    // Spawn free-drifting sparks that fly off and fade on their own
+    spawnTrailSpark(wp);
     await new Promise(r => setTimeout(r, SHOT_STEP_MS));
   }
 

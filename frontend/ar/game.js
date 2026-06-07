@@ -95,7 +95,6 @@ new MutationObserver(mutations => {
 
 // ── GLTF model loading ────────────────────────────────────────────────────────
 const gltfLoader   = new GLTFLoader();
-let tankGltfScene  = null;
 let pineGltfScene  = null;
 let birchGltfScene = null;
 
@@ -106,8 +105,6 @@ function loadGltf(url) {
 }
 
 const modelsReady = Promise.all([
-  loadGltf('/ar/models/tank/scene.glb').then(g  => { tankGltfScene  = g.scene; })
-    .catch(e => console.warn('Tank model failed',  e)),
   loadGltf('/ar/models/pine/scene.gltf').then(g  => { pineGltfScene  = g.scene; })
     .catch(e => console.warn('Pine model failed',  e)),
   loadGltf('/ar/models/birch/scene.gltf').then(g => { birchGltfScene = g.scene; })
@@ -326,36 +323,6 @@ function loadAvatar(url) {
   });
 }
 
-function buildTankGltf() {
-  const TANK_H = 0.12;
-  const model = tankGltfScene.clone(true);
-
-  // Cloned objects aren't in a scene so world matrices aren't auto-propagated.
-  // Must call this before Box3 or it only sees raw geometry ignoring child scales.
-  model.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  const sf = TANK_H / (Math.max(size.x, size.y, size.z) || 1);
-  const center = box.getCenter(new THREE.Vector3());
-
-  // After scale sf: original world point P maps to P*sf.
-  // Center XZ and sit bottom at y=0: position = (-center.x*sf, -min.y*sf, -center.z*sf)
-  model.scale.setScalar(sf);
-  model.position.set(-center.x * sf, -box.min.y * sf, -center.z * sf);
-  // Quaternius tank gun points toward +X in model space; trajectory azimuth=0° fires
-  // toward -Z. Rotating +90° around Y maps +X → -Z, aligning visual facing with trajectory.
-  model.rotation.y = Math.PI / 2;
-
-  const group = new THREE.Group();
-  group.add(model);
-
-  // Rotate the wrapper group so rotation.y always aligns with the world Y axis.
-  // Using the GLTF Tank_Turret node directly causes nose-tilt because that node's
-  // local axes may differ from world axes.
-  return { group, turretGroup: group };
-}
-
 function buildTankGeometric(colorHex) {
   const group = new THREE.Group();
   const hullMat  = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6, metalness: 0.3 });
@@ -380,9 +347,7 @@ function buildTankGeometric(colorHex) {
 async function addTank(player, index) {
   const colorHex = TANK_COLORS[index % TANK_COLORS.length];
 
-  const { group, turretGroup } = tankGltfScene
-    ? buildTankGltf()
-    : buildTankGeometric(colorHex);
+  const { group, turretGroup } = buildTankGeometric(colorHex);
 
   // Bright floating disc so the tank position is unmissable regardless of camera angle
   const discGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.004, 16);
@@ -726,7 +691,7 @@ function updateDebug() {
     `game=${game?.status ?? 'null'}  tanks=${tanks.size}  trees=${sceneryGroup.children.length}`,
     `cam fx=${fx} fy=${fy}  (identity=1.00)`,
     `vid readyState=${vidState}   socket=${socket.connected ? 'ok' : 'dc'}`,
-    `models: tank=${tankGltfScene ? 'ok' : 'miss'}  pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}`,
+    `models: pine=${pineGltfScene ? 'ok' : 'miss'}  birch=${birchGltfScene ? 'ok' : 'miss'}`,
   ].join('\n');
 }
 

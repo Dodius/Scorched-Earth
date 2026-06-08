@@ -47,7 +47,6 @@ let game        = null;
 let myAzimuth   = 0;
 let currentTurn = null;
 let animating        = false;
-let resolveOwnShot   = null;  // set when firing optimistically, resolved by server result
 let fieldScale       = 1;
 let countdownInterval = null;
 let focusReticleTimer = null;
@@ -640,8 +639,7 @@ function tickParticles() {
 }
 
 // ── trajectory math (mirrors backend game-engine.js exactly) ─────────────────
-// Used for optimistic client-side fire: start animating immediately on button
-// press without waiting for the server round-trip.
+// Kept client-side for future aim-preview arc rendering.
 const DEG_TO_RAD_C = Math.PI / 180;
 
 function computeTrajectory(origin, azimuth, elevation, power, options = {}) {
@@ -673,7 +671,7 @@ function computeLeapFrogTrajectory(origin, azimuth, elevation, power, options = 
 }
 
 // ── projectile animation ──────────────────────────────────────────────────────
-async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage, eliminated, livesAfter, resultPromise }) {
+async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage, eliminated, livesAfter }) {
   animating = true;
   updateControls();
 
@@ -739,19 +737,6 @@ async function animateProjectile({ waypoints, hit, targetId, impactPoint, damage
   battlefieldGroup.remove(proj);     projGeo.dispose();  projMat.dispose();
   battlefieldGroup.remove(trailPts); trailGeo.dispose(); trailMat.dispose();
   battlefieldGroup.remove(sparkPts); sparkGeo.dispose(); sparkMat.dispose();
-
-  // Optimistic path: wait for server's authoritative result
-  if (resultPromise) {
-    const result = await resultPromise;
-    if (result) {
-      hit = result.hit; targetId = result.targetId; impactPoint = result.impactPoint;
-      damage = result.damage; eliminated = result.eliminated; livesAfter = result.livesAfter;
-    } else {
-      const last = pts[pts.length - 1];
-      impactPoint = { x: last.x, y: 0.02, z: last.z };
-      hit = false;
-    }
-  }
 
   spawnExplosion(impactPoint, hit);
   if (hit && targetId) {
@@ -851,14 +836,7 @@ socket.on('tank-rotated', ({ playerId: rotatedId, azimuth }) => {
 
 socket.on('projectile-launched', (payload) => {
   stopCountdown();
-  if (resolveOwnShot) {
-    // Own shot: animation already running — feed server result into it
-    resolveOwnShot(payload);
-    resolveOwnShot = null;
-  } else {
-    // Another player's shot: animate from scratch with full server payload
-    animateProjectile(payload);
-  }
+  animateProjectile(payload);
 });
 
 socket.on('turn-timeout', ({ playerId: timedOutId }) => {
@@ -903,24 +881,8 @@ rotateRight.addEventListener('click', () => setAzimuth(myAzimuth + 5));
 elevationInput.addEventListener('input', () => { elevationValue.textContent = `${elevationInput.value} deg`; });
 powerInput.addEventListener('input',     () => { powerValue.textContent = `${powerInput.value}%`; });
 fireButton.addEventListener('click', () => {
-  const me = game?.players.find(p => p.id === playerId);
-  if (!me?.position) return;
   fireButton.disabled = true;
-
-  const az = myAzimuth;
-  const el = Number(elevationInput.value);
-  const pw = Number(powerInput.value);
-
-  // Compute trajectory locally and start animation immediately — no round-trip wait
-  const trajectoryFn = game.config?.bombMode === 'leap-frog' ? computeLeapFrogTrajectory : computeTrajectory;
-  const waypoints    = trajectoryFn({ ...me.position, y: 0.07 }, az, el, pw);
-  const resultPromise = new Promise(r => { resolveOwnShot = r; });
-  animateProjectile({ waypoints, resultPromise });
-
-  socket.emit('fire', { gameId, playerId, azimuth: az, elevation: el, power: pw },
-    (res) => {
-      fireButton.disabled = false;
-      if (!res?.ok) { resolveOwnShot?.(null); resolveOwnShot = null; }
-    }
+  socket.emit('fire', { gameId, playerId, azimuth: myAzimuth, elevation: Number(elevationInput.value), power: Number(powerInput.value) },
+    (res) => { if (!res?.ok) fireButton.disabled = false; }
   );
 });

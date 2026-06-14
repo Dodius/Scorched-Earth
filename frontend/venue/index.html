@@ -7,55 +7,78 @@
     <link rel="stylesheet" href="/venue/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="table-panel">
-        <div>
-          <p class="eyebrow" id="tableLabel">Venue table</p>
-          <h1>Scorched Earth AR</h1>
+
+    <!-- Screen 1: Landing — callsign + role choice -->
+    <section id="screenStart" class="screen">
+      <header class="brand">
+        <p class="eyebrow" id="tableLabel">table</p>
+        <h1>Scorched<br>Earth</h1>
+        <span id="connStatus" class="conn-status">Connecting…</span>
+      </header>
+
+      <div id="rejoinCard" class="rejoin-card" hidden>
+        <img id="rejoinAvatar" alt="" />
+        <div class="rejoin-info">
+          <strong id="rejoinName"></strong>
+          <small id="rejoinGameLabel"></small>
         </div>
-        <div class="status-pill" id="connectionStatus">Connecting</div>
-      </section>
+        <button id="rejoinBtn" class="btn-outline">Rejoin</button>
+      </div>
 
-      <section class="grid">
-        <article class="panel games-panel">
-          <div class="panel-head">
-            <h2>Table Games</h2>
-            <div class="panel-tools">
-              <button class="icon-button" id="refreshGames" title="Refresh games">↻</button>
-              <button class="icon-button danger-icon" id="clearGames" title="Clear table games">×</button>
-            </div>
-          </div>
-          <div id="gamesList" class="games-list"></div>
-        </article>
+      <div class="name-row">
+        <img id="avatarPreview" src="" alt="" class="avatar-sm" />
+        <input id="usernameInput" type="text" placeholder="Your callsign"
+               maxlength="24" autocomplete="nickname" spellcheck="false" />
+      </div>
 
-        <article class="panel create-panel">
-          <div class="panel-head">
-            <h2>Host Init</h2>
+      <div class="role-row">
+        <button id="hostBtn" class="role-btn">
+          <span class="role-icon">⚔</span>
+          <strong>Host</strong>
+          <small>Create game</small>
+        </button>
+        <button id="joinBtn" class="role-btn">
+          <span class="role-icon">🎯</span>
+          <strong>Join</strong>
+          <small>Enter code</small>
+        </button>
+      </div>
+    </section>
+
+    <!-- Screen 2: Host — configure & create -->
+    <section id="screenHost" class="screen" hidden>
+      <header class="screen-head">
+        <button id="backFromHost" class="back-btn">‹ Back</button>
+        <h2>New Game</h2>
+      </header>
+      <form id="createForm" class="form">
+        <fieldset>
+          <legend>Field size</legend>
+          <div class="field-size-picker">
+            <label class="field-tile">
+              <input type="radio" name="fieldSize" value="small" />
+              <span class="field-tile__preview field-tile__preview--small"></span>
+              <span>Small</span>
+            </label>
+            <label class="field-tile">
+              <input type="radio" name="fieldSize" value="medium" checked />
+              <span class="field-tile__preview field-tile__preview--medium"></span>
+              <span>Medium</span>
+            </label>
+            <label class="field-tile">
+              <input type="radio" name="fieldSize" value="large" />
+              <span class="field-tile__preview field-tile__preview--large"></span>
+              <span>Large</span>
+            </label>
           </div>
-          <form id="createForm" class="form">
-            <div class="form-field">
-              <span>Field size</span>
-              <div class="field-size-picker">
-                <label class="field-tile">
-                  <input type="radio" name="fieldSize" value="small" />
-                  <span class="field-tile__preview field-tile__preview--small"></span>
-                  <span class="field-tile__name">Small</span>
-                  <span class="field-tile__dim">0.6 × 0.45 m</span>
-                </label>
-                <label class="field-tile">
-                  <input type="radio" name="fieldSize" value="medium" checked />
-                  <span class="field-tile__preview field-tile__preview--medium"></span>
-                  <span class="field-tile__name">Medium</span>
-                  <span class="field-tile__dim">0.8 × 0.6 m</span>
-                </label>
-                <label class="field-tile field-tile--large">
-                  <input type="radio" name="fieldSize" value="large" />
-                  <span class="field-tile__preview field-tile__preview--large"></span>
-                  <span class="field-tile__name">Large</span>
-                  <span class="field-tile__dim">1.0 × 0.75 m</span>
-                </label>
-              </div>
-            </div>
+        </fieldset>
+        <label>
+          <span>Max players</span>
+          <input name="maxPlayers" type="number" min="1" max="6" value="6" />
+        </label>
+        <details>
+          <summary>Advanced options</summary>
+          <div class="details-body">
             <label>
               <span>Scene</span>
               <select name="scenePreset">
@@ -65,50 +88,52 @@
               </select>
             </label>
             <label>
-              <span>Players</span>
-              <input name="maxPlayers" type="number" min="2" max="6" value="6" />
-            </label>
-            <label>
-              <span>Bomb</span>
+              <span>Bomb type</span>
               <select name="bombMode">
-                <option value="normal" selected>Normal Bomb</option>
-                <option value="leap-frog">Leap-Frog Bomb</option>
+                <option value="normal" selected>Normal</option>
+                <option value="leap-frog">Leap-Frog</option>
               </select>
             </label>
-            <button class="primary" type="submit">Create Game</button>
-          </form>
-        </article>
-      </section>
+          </div>
+        </details>
+        <button class="primary" type="submit">Create &amp; Enter Lobby</button>
+      </form>
+    </section>
 
-      <section class="panel join-panel" id="joinPanel" hidden>
-        <div class="panel-head">
-          <h2>Join Game</h2>
-          <span class="game-code" id="selectedGameCode"></span>
-        </div>
-        <form id="joinForm" class="join-form">
-          <img id="avatarPreview" alt="" class="avatar-preview" />
-          <label>
-            <span>Nickname</span>
-            <input id="usernameInput" name="username" maxlength="24" autocomplete="nickname" placeholder="Tank pilot" required />
-          </label>
-          <button class="primary" type="submit">Join Lobby</button>
-        </form>
-      </section>
+    <!-- Screen 3: Join by code -->
+    <section id="screenJoin" class="screen" hidden>
+      <header class="screen-head">
+        <button id="backFromJoin" class="back-btn">‹ Back</button>
+        <h2>Join Game</h2>
+      </header>
+      <form id="joinForm" class="form">
+        <label>
+          <span>Game code</span>
+          <input id="gameCodeInput" type="text" placeholder="Ask the host"
+                 maxlength="10" spellcheck="false" autocorrect="off" autocapitalize="off" />
+        </label>
+        <button class="primary" type="submit">Enter Lobby</button>
+      </form>
+    </section>
 
-      <section class="panel lobby-panel" id="lobbyPanel" hidden>
-        <div class="panel-head">
-          <h2>Lobby</h2>
-          <span class="game-code" id="lobbyGameCode"></span>
+    <!-- Screen 4: Lobby -->
+    <section id="screenLobby" class="screen" hidden>
+      <header class="screen-head">
+        <h2>Lobby</h2>
+        <div class="code-badge">
+          <small>Game code</small>
+          <strong id="lobbyCode"></strong>
         </div>
-        <div id="playersList" class="players-list"></div>
-        <div class="lobby-actions">
-          <button class="primary" id="startGameButton">Start Game</button>
-          <p id="lobbyHint">Solo test games are allowed.</p>
-        </div>
-      </section>
-    </main>
+      </header>
+      <div id="playersList" class="players-list"></div>
+      <div class="lobby-foot">
+        <button id="startBtn" class="primary" hidden>Start Game</button>
+        <p id="lobbyHint" class="hint"></p>
+        <button id="leaveBtn" class="btn-outline btn-full">Leave Lobby</button>
+      </div>
+    </section>
 
-    <div class="toast" id="toast" hidden></div>
+    <div id="toast" class="toast" hidden></div>
 
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <script src="/config.js"></script>

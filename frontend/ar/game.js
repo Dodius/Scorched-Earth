@@ -4,7 +4,7 @@ import { ArToolkitSource, ArToolkitContext, ArMarkerControls } from 'threex';
 
 // ── constants ────────────────────────────────────────────────────────────────
 // Physical AR scale relative to the marker: 1=fits inside card, 2=twice marker, 4=four times
-const FIELD_SCALES      = { small: 1, medium: 2, large: 4 };
+const FIELD_SCALES      = { small: 1, medium: 2, large: 5 };
 const TANK_COLORS       = [0x4fc3f7, 0xf06292, 0x81c784, 0xffb74d, 0xce93d8, 0x80cbc4];
 const SHOT_STEP_MS      = 90;   // ms per waypoint — controls bullet speed
 const PARTICLE_COUNT    = 60;
@@ -126,7 +126,7 @@ scene.add(markerRoot);
 new ArMarkerControls(arContext, markerRoot, {
   type: 'pattern',
   patternUrl: '/ar/markers/pattern-Lo.patt',
-  smooth: true, smoothCount: 5, smoothTolerance: 0.01, smoothThreshold: 2,
+  smooth: true, smoothCount: 8, smoothTolerance: 0.05, smoothThreshold: 2,
 });
 
 const battlefieldGroup = new THREE.Group();
@@ -820,7 +820,18 @@ function escapeHtml(v) {
 socket.on('connect', () => { setHud('Online'); socket.emit('rejoin-game', { gameId, playerId }); });
 socket.on('disconnect', () => setHud('Offline'));
 
-socket.on('game-state', ({ game: nextGame }) => { initScene(nextGame); setHud(nextGame.status); });
+socket.on('game-state', ({ game: nextGame }) => {
+  if (game?.id === nextGame?.id && nextGame.status === 'playing') {
+    // Mid-game update — refresh state without tearing down the live scene
+    game = nextGame;
+    currentTurn = nextGame.currentTurn;
+    updateLivesPanel();
+    updateControls();
+  } else {
+    initScene(nextGame);
+  }
+  setHud(nextGame.status);
+});
 socket.on('game-started', ({ game: nextGame }) => { initScene(nextGame); setHud('Playing'); startCountdown(); updateControls(); });
 
 socket.on('your-turn', ({ playerId: nextTurn }) => {
